@@ -4,51 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-deTime (WST) is a Chrome Extension (Manifest V3) that provides iOS Screen Time-like web activity tracking. It uses session-based analysis with automatic categorization and a privacy-first architecture.
+deTime is a Chrome Extension (Manifest V3) that provides iOS Screen Time-like web activity tracking. It uses session-based analysis with automatic categorization and a privacy-first architecture.
 
 ## Repository Structure
 
 ```
-/home/jjshin/wst/           # Repository root
-└── wst/                    # Chrome Extension source (load this folder)
-    ├── manifest.json
-    ├── background/         # Service worker modules
-    ├── popup/              # Extension popup UI
-    ├── dashboard/          # Full analytics dashboard
-    ├── settings/           # Settings page
-    ├── common/             # Shared utilities and constants
-    ├── icons/              # Extension icons
-    └── blacklist-server/   # Python FastAPI backend
+detime-extension/
+├── manifest.json
+├── background/         # Service worker modules
+├── common/             # Shared utilities and constants
+├── content/            # Content scripts
+├── dashboard/          # Full analytics dashboard
+├── popup/              # Extension popup UI
+├── settings/           # Settings page
+├── onboarding/         # First-run onboarding flow
+├── icons/              # Extension icons
+└── blocked.html        # Blocked site page
 ```
 
-Note: Both the extension and backend are in the `wst/` directory.
+## Development
 
-## Development Commands
-
-### Chrome Extension (Frontend)
 No build system - uses native ES6 modules. Load directly in Chrome:
 1. Open `chrome://extensions`
 2. Enable "Developer mode"
-3. Click "Load unpacked" and select the `wst/` folder
+3. Click "Load unpacked" and select this folder
 4. Refresh the extension after code changes
-
-### Backend Server (Python FastAPI)
-```bash
-cd wst/blacklist-server
-python3 -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install -r requirements.txt
-
-# Run manually
-python main.py
-
-# Or run as systemd service (recommended)
-systemctl --user start wst-server
-systemctl --user status wst-server
-```
-Server runs at `http://localhost:8000`. API docs at `http://localhost:8000/docs`.
-
-Service file: `~/.config/systemd/user/wst-server.service`
 
 ## Architecture
 
@@ -56,28 +36,17 @@ Service file: `~/.config/systemd/user/wst-server.service`
 - **Service Worker** (`background/service-worker.js`): Entry point, initializes all modules and handles IPC messages
 - **Session Tracker** (`background/session-tracker.js`): State machine tracking browsing sessions (IDLE → CORE → EXTENDED)
 - **Category Detector** (`background/category-detector.js`): Scores URLs/titles to classify into categories
+- **Category Scheduler** (`background/category-scheduler.js`): Scheduled category DB updates
 - **DB Manager** (`background/db-manager.js`): IndexedDB operations for sessions, stats, limits, settings
 - **Server Sync** (`background/server-sync.js`): Optional category DB updates and anonymous usage stats
-- **History Analyzer** (`background/history-analyzer.js`): Analyzes Chrome history to approximate past screen time (before extension install)
-- **Keyword Extractor** (`background/keyword-extractor.js`): Privacy-first keyword extraction from URLs/titles for category improvement
+- **History Analyzer** (`background/history-analyzer.js`): Analyzes Chrome history to approximate past screen time
+- **Keyword Extractor** (`background/keyword-extractor.js`): Privacy-first keyword extraction from URLs/titles
 
 ### UI Components
 - **Popup** (`popup/`): Quick view (360x500px) showing today's stats
 - **Dashboard** (`dashboard/`): Full analytics with charts (Canvas API)
 - **Settings** (`settings/`): Configuration for limits, privacy, sync
-
-### Backend (Python FastAPI)
-Located in `wst/blacklist-server/`. Dual-purpose server:
-1. **Legacy NSFW Detection**: Blacklist domains/keywords, tier information
-2. **deTime**: Category database sync, anonymous usage statistics
-
-Structure:
-- `main.py`: FastAPI app with CORS, rate limiting, privacy-focused logging (NO IP logging)
-- `database.py`: SQLite database management (aiosqlite)
-- `routes/`: API endpoints (categories, usage_stats, blacklist, tiers, stats, dashboard)
-- `services/`: Background tasks, tier calculator, keyword extractor
-- `middleware/`: Rate limiting
-- `models.py`: Pydantic models for requests/responses
+- **Onboarding** (`onboarding/`): First-run setup and history analysis
 
 ## Key Patterns
 
@@ -137,46 +106,11 @@ UI communicates with background via `chrome.runtime.sendMessage`:
 ## Categories
 Defined in `common/constants.js`: social, entertainment, workspace, shopping, news, games, education, adult, other. Each has domains, keywords, and color coding.
 
-## History Analysis
-On first install, automatically analyzes Chrome history (last 30 days) to provide immediate usage insights. Uses time-based heuristics:
-- 5-minute gaps = same session
-- 3-minute minimum per single visit
-- 4-hour session cap for unrealistic sessions
-- Processes in 1000-item batches
-
-Controlled by settings: `historyAnalysis.showApproximatedData` (default: true)
-
-## Privacy Architecture
-
-### Keyword Extraction
-When enabled, extracts anonymized keywords from URLs/titles:
-- Removes stopwords (common words like "the", "and", etc.)
-- Filters personal information (emails, names, dates, phone numbers, passwords)
-- Generalizes URL patterns (e.g., `/watch?v=xyz` → `/watch`)
-- Only sends: domain + detected category + anonymized keywords
-- Never sends: full URLs, page titles, personal data
-
-### Server Privacy Guarantees
-- NO IP address logging
-- NO user identification or tracking
-- NO full URLs stored (domains only)
-- Random hash IDs for anonymity
-- User opt-in required (default: disabled)
-
 ## Debugging
 - Background Script: `chrome://extensions` → click "Service Worker" link
 - Popup: Right-click popup → "Inspect"
 - Dashboard/Settings: Standard F12 DevTools
 
-## Server API Endpoints
-
-### deTime
-```
-GET  /api/categories/version   - Check category DB version
-GET  /api/categories           - Download category database
-POST /api/usage-stats          - Upload anonymous usage stats
-GET  /api/usage-stats/summary  - Get usage statistics (admin)
-```
-
-
+## Server
+Backend is in a separate repo: [detime-server](https://github.com/jeongjin0/detime-server)
 Server URL configured in `common/server-config.js` (default: `https://api.detime.co/api`).

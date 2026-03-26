@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome - deTime</title>
+  <link rel="stylesheet" href="onboarding.css">
+</head>
+<body>
+  <div class="container">
+
+    <!-- Screen 0: Welcome + Consent + Options -->
+    <div class="screen" id="welcomeScreen">
+      <div class="welcome-logo">⏱️</div>
+      <h1 class="welcome-title">Welcome to deTime</h1>
+      <p class="welcome-subtitle">Understand how you spend your time online.<br>All data stays on your device.</p>
+
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon track">⏱️</div>
+          <div class="feature-text">
+            <h3>Automatic Tracking</h3>
+            <p>Silently tracks your browsing activity in the background</p>
+          </div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon chart">📊</div>
+          <div class="feature-text">
+            <h3>Detailed Analytics</h3>
+            <p>Charts, trends, and insights about your daily habits</p>
+          </div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon lock">🔒</div>
+          <div class="feature-text">
+            <h3>Privacy First</h3>
+            <p>Everything is stored locally. No accounts, no cloud</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-divider"><span>What We Track</span></div>
+
+      <div class="data-notice">
+        <div class="data-notice-items">
+          <span class="data-tag">🔗 URLs & Domains</span>
+          <span class="data-tag">⏱️ Time Spent</span>
+          <span class="data-tag">🏷️ Auto Categories</span>
+        </div>
+        <p class="data-notice-text">All data is stored locally on your device. You can delete it anytime from Settings.</p>
+      </div>
+
+      <div class="section-divider"><span>Options</span></div>
+
+      <div class="options-list">
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-label">Import Browsing History</div>
+            <div class="toggle-desc">Analyze past 14 days for immediate insights</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="analyzeHistory" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-label">Help Improve deTime</div>
+            <div class="toggle-desc">Share anonymous domain categories to improve detection</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="shareStats">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Advanced Settings (collapsible) -->
+      <div class="advanced-toggle" id="advancedToggle">
+        <span class="advanced-toggle-text">Advanced Settings</span>
+        <span class="advanced-toggle-arrow" id="advancedArrow">▸</span>
+      </div>
+
+      <div class="advanced-panel hidden" id="advancedPanel">
+        <div class="pref-group">
+          <div class="pref-label">Week Starts On</div>
+          <div class="segment-control" id="weekStartControl">
+            <button class="segment-btn" data-value="0">Sun</button>
+            <button class="segment-btn active" data-value="1">Mon</button>
+            <button class="segment-btn" data-value="6">Sat</button>
+          </div>
+        </div>
+
+        <div class="options-list">
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <div class="toggle-label">Notifications</div>
+              <div class="toggle-desc">Get alerts when you're near a time limit</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="notificationsToggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <div class="toggle-label">Privacy Mode</div>
+              <div class="toggle-desc">Auto-handle adult content detection</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="privacyModeToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <p class="hint-text">You can change these options later in Settings</p>
+
+      <button id="startBtn" class="btn btn-primary btn-full">Start Tracking</button>
+    </div>
+
+    <!-- Screen 1: Name -->
+    <div class="screen hidden" id="nameScreen">
+      <h2 class="screen-title">What should we call you?</h2>
+      <p class="screen-description">This appears on your dashboard greeting</p>
+      <input type="text" id="nameInput" class="onboarding-input" placeholder="Enter your name" maxlength="20" autocomplete="off">
+      <div class="greeting-preview" id="greetingPreview">
+        <span class="greeting-preview-text">Good morning</span>
+      </div>
+      <button class="btn btn-primary btn-full" id="nameNextBtn">Continue</button>
+      <button class="btn-link" id="nameSkipBtn">Skip</button>
+    </div>
+
+    <!-- Screen 2: Progress + Tips -->
+    <div class="screen hidden" id="progressScreen">
+      <div class="complete-icon" id="completeIcon">⏳</div>
+      <h2 class="screen-title" id="completeTitle">Setting things up...</h2>
+      <p class="screen-description" id="completeSubtitle">This won't take long</p>
+
+      <!-- Compact Progress -->
+      <div class="compact-progress" id="compactProgress">
+        <div class="compact-progress-item" id="cpCache">
+          <span class="cp-dot"></span>
+          <span class="cp-text">Category database</span>
+        </div>
+        <div class="compact-progress-item" id="cpHistory">
+          <span class="cp-dot"></span>
+          <span class="cp-text">History analysis</span>
+        </div>
+        <div class="compact-progress-item" id="cpClassify">
+          <span class="cp-dot"></span>
+          <span class="cp-text">Activity classification</span>
+        </div>
+      </div>
+
+      <!-- Tips Slideshow -->
+      <div class="tips-container" id="tipsContainer">
+        <div class="tip-card active" data-tip="0">
+          <div class="tip-icon">📊</div>
+          <div class="tip-text">
+            <strong>Flowchart View</strong>
+            <p>See your entire day visualized minute-by-minute. Every color represents a different category.</p>
+          </div>
+        </div>
+        <div class="tip-card" data-tip="1">
+          <div class="tip-icon">⏰</div>
+          <div class="tip-text">
+            <strong>Set Time Limits</strong>
+            <p>Go to Limits to set daily limits per category. You'll get a notification when you're close.</p>
+          </div>
+        </div>
+        <div class="tip-card" data-tip="2">
+          <div class="tip-icon">📈</div>
+          <div class="tip-text">
+            <strong>Weekly Reports</strong>
+            <p>Check the Reports tab to see trends over time and compare your productive vs unproductive hours.</p>
+          </div>
+        </div>
+        <div class="tip-card" data-tip="3">
+          <div class="tip-icon">🔍</div>
+          <div class="tip-text">
+            <strong>Click Any Site</strong>
+            <p>Click on any site in your Most Used list to see detailed visit history with timestamps.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="tips-dots" id="tipsDots">
+        <span class="tip-dot active"></span>
+        <span class="tip-dot"></span>
+        <span class="tip-dot"></span>
+        <span class="tip-dot"></span>
+      </div>
+
+      <button class="btn btn-primary btn-full" id="openDashboardBtn" disabled>Almost ready...</button>
+    </div>
+
+  </div>
+
+  <script type="module" src="onboarding.js"></script>
+</body>
+</html>

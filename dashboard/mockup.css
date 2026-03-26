@@ -1,0 +1,851 @@
+/* ============================================
+   Mockup Mode Styles
+   To remove mockup feature: delete this file
+   and remove <link> from dashboard.html
+   ============================================ */
+
+/* ============================================
+   Mockup Controls (always visible in sidebar)
+   ============================================ */
+.mockup-controls {
+  padding: 12px 16px;
+  margin: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
+.mockup-controls-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--warning);
+  margin-bottom: 10px;
+}
+
+.mockup-toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.mockup-toggle-row:last-child {
+  margin-bottom: 0;
+}
+
+.mockup-toggle-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.mockup-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+}
+
+.mockup-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.mockup-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--border);
+  border-radius: 22px;
+  transition: background 0.2s;
+}
+
+.mockup-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.mockup-switch input:checked + .mockup-slider {
+  background: var(--warning);
+}
+
+.mockup-switch input:checked + .mockup-slider::before {
+  transform: translateX(18px);
+}
+
+/* Mockup active indicator */
+body.mockup-data-active .sidebar-header::after {
+  content: 'MOCKUP';
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--warning);
+  color: #000;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* ============================================
+   Mockup Layout - Compact Layout
+   Only applies when mockup layout toggle is ON
+   ============================================ */
+
+/* Hide "vs Yesterday" row */
+body.mockup-layout-active #todaySameTimeContainer {
+  display: none;
+}
+
+/* Header & Tabs compact */
+body.mockup-layout-active .content-header {
+  margin-bottom: 10px;
+}
+
+body.mockup-layout-active .chart-period-toggle {
+  padding: 2px;
+  margin-bottom: 8px;
+}
+
+body.mockup-layout-active .tab-btn {
+  padding: 4px 14px;
+  font-size: 12px;
+}
+
+/* Main block compact */
+body.mockup-layout-active .card-main-block {
+  margin-bottom: 10px;
+}
+
+body.mockup-layout-active .card {
+  padding: 10px 12px;
+}
+
+body.mockup-layout-active .card h3 {
+  font-size: 10px;
+  margin-bottom: 6px;
+}
+
+/* Chart row & stack */
+body.mockup-layout-active .chart-row {
+  gap: 16px;
+}
+
+body.mockup-layout-active .charts-stack {
+  padding: 14px;
+}
+
+body.mockup-layout-active .chart-section {
+  margin-bottom: 10px;
+}
+
+body.mockup-layout-active .chart-total-value {
+  font-size: 22px;
+}
+
+body.mockup-layout-active .chart-color-toggle {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+/* Chart canvas heights */
+body.mockup-layout-active .chart-week canvas {
+  height: 187px;
+}
+
+body.mockup-layout-active .chart-hourly canvas {
+  height: 76px;
+}
+
+/* Category cell - horizontal layout */
+body.mockup-layout-active .category-cell {
+  margin-left: 16px;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 18px;
+  align-items: stretch;
+  overflow: visible;
+}
+
+/* Productivity section - left side compact */
+body.mockup-layout-active .productivity-section {
+  margin-top: 0;
+  margin-bottom: 0;
+  flex: 0 0 140px !important;
+  max-width: 140px;
+  min-width: 140px;
+}
+
+body.mockup-layout-active .productivity-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+body.mockup-layout-active .productivity-chart {
+  width: 70px;
+  height: 70px;
+}
+
+body.mockup-layout-active .productivity-chart canvas {
+  width: 70px !important;
+  height: 70px !important;
+}
+
+body.mockup-layout-active .productivity-score-value {
+  font-size: 15px;
+}
+
+body.mockup-layout-active .productivity-details {
+  width: 100%;
+  gap: 2px;
+  padding-top: 0;
+}
+
+body.mockup-layout-active .productivity-bar-row {
+  gap: 5px;
+}
+
+body.mockup-layout-active .prod-dot {
+  width: 6px;
+  height: 6px;
+}
+
+body.mockup-layout-active .productivity-bar-row .prod-label {
+  font-size: 10px;
+}
+
+body.mockup-layout-active .productivity-bar-row .prod-time {
+  font-size: 10px;
+  margin-left: auto;
+}
+
+/* Categories section - right side */
+body.mockup-layout-active .categories-section {
+  border-top: none;
+  border-left: 1px solid var(--border);
+  padding-top: 30px;
+  padding-left: 12px;
+  margin-top: 0;
+  flex: 1 1 0% !important;
+  min-width: 0;
+  overflow: visible;
+}
+
+body.mockup-layout-active .categories-grid {
+  gap: 4px;
+  justify-content: space-between;
+  height: 100%;
+}
+
+body.mockup-layout-active .category-item-compact {
+  gap: 2px;
+  padding: 2px 4px;
+}
+
+body.mockup-layout-active .category-name-small {
+  font-size: 11px;
+}
+
+body.mockup-layout-active .category-time-small {
+  font-size: 11px;
+}
+
+body.mockup-layout-active .category-bar-small {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* Bottom cards - vertical stack */
+body.mockup-layout-active .bottom-cards {
+  flex-direction: column;
+  gap: 12px;
+}
+
+body.mockup-layout-active .card-small {
+  width: 100%;
+}
+
+/* Usage stats - compact inline */
+body.mockup-layout-active .usage-stats-grid {
+  flex-direction: column;
+  gap: 3px;
+  padding: 0;
+}
+
+body.mockup-layout-active .stat-box {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  text-align: left;
+  padding: 2px 0;
+}
+
+body.mockup-layout-active .stat-box:not(:last-child)::after {
+  display: none;
+}
+
+body.mockup-layout-active .stat-box-value {
+  display: inline;
+  font-size: 13px;
+  letter-spacing: -0.3px;
+}
+
+body.mockup-layout-active .stat-box-label {
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+body.mockup-layout-active .stat-box-compare {
+  font-size: 9px;
+  gap: 1px;
+  margin-top: 0;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* Hide Sessions in mockup mode */
+body.mockup-layout-active .stat-box-sessions {
+  display: none;
+}
+
+/* Goals - horizontal compact */
+body.mockup-layout-active .goals-display {
+  flex-direction: row;
+  gap: 6px;
+}
+
+body.mockup-layout-active .goals-display .goal-card {
+  flex: 1;
+  min-width: 0;
+}
+
+body.mockup-layout-active .goals-empty {
+  font-size: 11px;
+  padding: 6px;
+}
+
+body.mockup-layout-active .goal-card {
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+
+body.mockup-layout-active .goal-card:hover {
+  box-shadow: none;
+}
+
+body.mockup-layout-active .goal-card-content {
+  gap: 6px;
+}
+
+body.mockup-layout-active .goal-circular-progress {
+  width: 32px;
+  height: 32px;
+}
+
+body.mockup-layout-active .goal-progress-bg {
+  stroke-width: 5;
+}
+
+body.mockup-layout-active .goal-progress-circle {
+  stroke-width: 5;
+}
+
+body.mockup-layout-active .goal-progress-percent {
+  font-size: 7px;
+  white-space: nowrap;
+}
+
+body.mockup-layout-active .goal-card-header {
+  display: none;
+}
+
+body.mockup-layout-active .goal-card-icon {
+  font-size: 10px;
+}
+
+body.mockup-layout-active .goal-card-title {
+  font-size: 10px;
+}
+
+body.mockup-layout-active .goal-card-times {
+  gap: 2px;
+  margin-bottom: 0;
+}
+
+body.mockup-layout-active .goal-time-current {
+  font-size: 11px;
+}
+
+body.mockup-layout-active .goal-time-target {
+  font-size: 9px;
+}
+
+body.mockup-layout-active .goal-card-status {
+  font-size: 9px;
+}
+
+/* Most used sites - compact */
+body.mockup-layout-active .most-used-list {
+  gap: 3px;
+}
+
+body.mockup-layout-active .most-used-item-new {
+  padding: 4px 6px;
+  margin: -4px -6px;
+  gap: 6px;
+}
+
+body.mockup-layout-active .most-used-favicon {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+}
+
+body.mockup-layout-active .most-used-header {
+  gap: 4px;
+}
+
+body.mockup-layout-active .most-used-name {
+  font-size: 11px;
+}
+
+body.mockup-layout-active .most-used-category {
+  font-size: 10px;
+}
+
+body.mockup-layout-active .most-used-time {
+  min-width: 40px;
+}
+
+/* ============================================
+   AI Insights Section (Mockup Only)
+   ============================================ */
+
+.ai-insights-section { display: none; }
+
+body.mockup-data-active .ai-insights-section {
+  display: block;
+  margin-top: 16px;
+}
+
+/* Header */
+body.mockup-data-active .ai-insights-header {
+  margin-bottom: 10px;
+}
+
+body.mockup-data-active .ai-insights-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.mockup-data-active .ai-insights-title h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  background: linear-gradient(135deg, #007AFF, #AF52DE);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+body.mockup-data-active .ai-icon { font-size: 20px; }
+
+
+/* Chart Card — full width, compact stacked */
+body.mockup-data-active .ai-chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 10px 14px 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+/* Chart Title */
+body.mockup-data-active .ai-chart-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+  letter-spacing: -0.2px;
+}
+
+/* AI Comment — natural language insight above chart */
+body.mockup-data-active .ai-comment {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  margin: 0 0 8px 0;
+}
+
+body.mockup-data-active .ai-comment .ai-label {
+  font-weight: 700;
+  color: #AF52DE;
+  margin-right: 4px;
+}
+
+body.mockup-data-active .ai-comment .ai-highlight {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Chart */
+body.mockup-data-active .ai-chart-container {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+}
+
+body.mockup-data-active .ai-chart-container canvas {
+  display: block;
+}
+
+/* Category Breakdown */
+body.mockup-data-active .cb-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+body.mockup-data-active .cb-category {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+body.mockup-data-active .cb-category:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+body.mockup-data-active .cb-category:first-child {
+  padding-top: 4px;
+}
+
+body.mockup-data-active .cb-card .ai-chart-title {
+  margin-bottom: 10px;
+}
+
+body.mockup-data-active .cb-cat-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+body.mockup-data-active .cb-cat-icon {
+  font-size: 13px;
+  width: 18px;
+  text-align: center;
+}
+
+body.mockup-data-active .cb-cat-name {
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+body.mockup-data-active .cb-cat-time {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 12px;
+}
+
+body.mockup-data-active .cb-cat-pct {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  min-width: 28px;
+  text-align: right;
+}
+
+body.mockup-data-active .cb-cat-bar-track {
+  height: 4px;
+  background: var(--bg-secondary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+body.mockup-data-active .cb-cat-bar {
+  height: 100%;
+  border-radius: 3px;
+}
+
+body.mockup-data-active .cb-domains {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-left: 24px;
+  margin-top: 1px;
+}
+
+body.mockup-data-active .cb-domain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+
+body.mockup-data-active .cb-domain-icon {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+body.mockup-data-active .cb-domain-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.mockup-data-active .cb-domain-time {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+body.mockup-data-active .cb-domain-pct {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  min-width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Key Metrics — 2x2 grid */
+body.mockup-data-active .ai-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+body.mockup-data-active .ai-metric-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+body.mockup-data-active .ai-metric-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+
+body.mockup-data-active .ai-metric-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+body.mockup-data-active .ai-metric-rank {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  margin-right: 4px;
+  margin-top: 2px;
+}
+
+body.mockup-data-active .ai-rank-good {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34C759;
+}
+
+body.mockup-data-active .ai-rank-bad {
+  background: rgba(255, 59, 48, 0.12);
+  color: #FF3B30;
+}
+
+body.mockup-data-active .ai-rank-neutral {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007AFF;
+}
+
+body.mockup-data-active .ai-metric-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+  margin: 4px 0;
+}
+
+body.mockup-data-active .ai-metric-unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-left: 1px;
+}
+
+body.mockup-data-active .ai-metric-sub {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: 3px;
+}
+
+/* ============================================
+   Mobile Preview Mode
+   ============================================ */
+body.mobile-preview-mode {
+  background: #1a1a2e;
+  overflow: auto;
+}
+
+body.mobile-preview-mode .sidebar {
+  position: fixed;
+  z-index: 1000;
+}
+
+body.mobile-preview-mode .main-content {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px 0;
+  min-height: 100vh;
+  background: #1a1a2e;
+}
+
+body.mobile-preview-mode .main-content-inner {
+  width: 390px;
+  max-width: 390px;
+  min-width: 390px;
+  min-height: 844px;
+  background: var(--bg);
+  border-radius: 40px;
+  padding: 50px 16px 30px;
+  box-shadow:
+    0 0 0 4px #333,
+    0 0 0 6px #1a1a1a,
+    0 25px 60px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+body.mobile-preview-mode .main-content-inner::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 28px;
+  background: #1a1a1a;
+  border-radius: 20px;
+  z-index: 10;
+}
+
+body.mobile-preview-mode .content-header {
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+body.mobile-preview-mode .content-header .header-right {
+  width: 100%;
+  justify-content: space-between;
+}
+
+body.mobile-preview-mode .server-status {
+  display: none;
+}
+
+body.mobile-preview-mode .card-main-block {
+  padding: 12px;
+}
+
+body.mobile-preview-mode .chart-row {
+  flex-direction: column;
+  gap: 16px;
+}
+
+body.mobile-preview-mode .charts-stack {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+body.mobile-preview-mode .category-cell {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+  flex-direction: column !important;
+}
+
+body.mobile-preview-mode .categories-section {
+  border-left: none !important;
+  border-top: 1px solid var(--border);
+  padding-left: 0 !important;
+  padding-top: 10px;
+}
+
+body.mobile-preview-mode .chart-header-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+body.mobile-preview-mode .chart-color-toggle-group {
+  width: 100%;
+}
+
+body.mobile-preview-mode .chart-color-toggle {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
+body.mobile-preview-mode .bottom-cards {
+  flex-direction: column;
+  gap: 8px;
+}
+
+body.mobile-preview-mode .bottom-cards .card-small {
+  width: 100%;
+}
+
+body.mobile-preview-mode .productivity-layout {
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+body.mobile-preview-mode .categories-grid {
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+body.mobile-preview-mode .date-navigator h1 {
+  font-size: 18px;
+}

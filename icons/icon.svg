@@ -1,0 +1,31 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#007AFF"/>
+
+  <!-- Clock face -->
+  <circle cx="64" cy="64" r="48" fill="white"/>
+
+  <!-- Clock border -->
+  <circle cx="64" cy="64" r="48" stroke="#007AFF" stroke-width="3" fill="none"/>
+
+  <!-- Hour markers -->
+  <circle cx="64" cy="24" r="3" fill="#007AFF"/>
+  <circle cx="64" cy="104" r="3" fill="#007AFF"/>
+  <circle cx="24" cy="64" r="3" fill="#007AFF"/>
+  <circle cx="104" cy="64" r="3" fill="#007AFF"/>
+
+  <!-- Hour hand -->
+  <line x1="64" y1="64" x2="64" y2="40" stroke="#007AFF" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Minute hand -->
+  <line x1="64" y1="64" x2="84" y2="64" stroke="#007AFF" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Center dot -->
+  <circle cx="64" cy="64" r="5" fill="#007AFF"/>
+
+  <!-- Chart bar decorations -->
+  <rect x="44" y="84" width="6" height="16" rx="2" fill="#007AFF" opacity="0.6"/>
+  <rect x="54" y="76" width="6" height="24" rx="2" fill="#007AFF" opacity="0.6"/>
+  <rect x="64" y="72" width="6" height="28" rx="2" fill="#007AFF" opacity="0.6"/>
+  <rect x="74" y="80" width="6" height="20" rx="2" fill="#007AFF" opacity="0.6"/>
+</svg>

@@ -651,92 +651,40 @@ header h1 {
   font-weight: 500;
 }
 
-/* Target Type Selector */
-.target-type-selector {
+/* Site Filter Section */
+.site-filter-section {
   display: flex;
-  gap: 0;
-  background: var(--bg);
-  border-radius: var(--radius-sm);
-  padding: 3px;
-  border: 1px solid var(--border-light);
-  margin-bottom: 12px;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.target-type-btn {
-  flex: 1;
-  padding: 8px 12px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.target-type-btn:hover:not(.disabled) {
-  color: var(--text);
-}
-
-.target-type-btn.active {
-  background: var(--bg-card);
-  color: var(--primary);
-  font-weight: 600;
-  box-shadow: var(--shadow-sm);
-}
-
-.target-type-btn.disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.target-value-section {
-  margin-top: 0;
+.site-filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .filter-hint {
   font-size: 12px;
   color: var(--text-tertiary);
-  margin-top: 6px;
 }
 
-/* Limit Target Badges */
-.limit-target {
+/* Limit Item Site Filters */
+.limit-filters {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+.limit-filters span {
   display: inline-block;
+  background: var(--bg);
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-right: 6px;
   font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  margin-left: 8px;
-  vertical-align: middle;
-}
-
-.limit-target-sub {
-  background: rgba(0, 122, 255, 0.1);
-  color: var(--primary);
-}
-
-.limit-target-dom {
-  background: rgba(255, 149, 0, 0.1);
-  color: var(--warning);
-}
-
-.limit-target-grp {
-  background: rgba(52, 199, 89, 0.1);
-  color: var(--success);
-}
-
-/* Clickable limit items */
-.limit-item {
-  cursor: pointer;
-}
-
-/* Category dropdown optgroup styling */
-#limitCategory optgroup {
-  font-weight: 600;
-  color: var(--text);
-  padding: 4px 0;
+  font-weight: 500;
+  border: 1px solid var(--border-light);
 }
 
 /* Empty State */

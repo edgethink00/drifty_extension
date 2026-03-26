@@ -2,7 +2,6 @@ import { formatTime, formatTimeWithSeconds, calculatePercentage, formatDate, get
 import { SERVER_CONFIG } from '../common/server-config.js';
 import { SUBCATEGORIES, getSubcategoryName, hasMultipleSubcategories } from '../common/subcategories.js';
 import { getWellKnownDomain } from '../common/well-known-domains.js';
-import { PRODUCTIVITY_GROUPS } from '../common/constants.js';
 
 // ============================================
 // Week Start Day Setting
@@ -20,23 +19,6 @@ async function loadWeekStartDay() {
     }
   } catch (error) {
     console.error('Error loading week start day:', error);
-  }
-}
-
-/**
- * Load and display dashboard greeting
- */
-async function loadGreeting() {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
-    const name = response?.data?.displayName;
-    const hour = new Date().getHours();
-    let greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-    if (name) greeting += `, ${name}`;
-    const el = document.getElementById('greetingText');
-    if (el) el.textContent = greeting;
-  } catch (error) {
-    console.error('Error loading greeting:', error);
   }
 }
 
@@ -96,12 +78,24 @@ function formatDateLocal(date) {
   return `${year}-${month}-${day}`;
 }
 
-// PRODUCTIVITY_GROUPS imported from common/constants.js
-// Override chart-specific colors (imported version uses different palette)
-// We mutate these for accent color sync later
-PRODUCTIVITY_GROUPS.productive.color = '#007AFF';
-PRODUCTIVITY_GROUPS.unproductive.color = '#FF6B6B';
-PRODUCTIVITY_GROUPS.neutral.color = '#8E8E93';
+// Productivity groupings (colors match CSS .prod-bar-fill)
+const PRODUCTIVITY_GROUPS = {
+  productive: {
+    name: 'Productive',
+    categories: ['productivity', 'education'],
+    color: '#8BAF5B'  // Blue
+  },
+  unproductive: {
+    name: 'Unproductive',
+    categories: ['social', 'entertainment', 'games', 'adult'],
+    color: '#FF6B6B'  // Grapefruit
+  },
+  neutral: {
+    name: 'Neutral',
+    categories: ['shopping', 'news', 'other'],
+    color: '#8E8E93'  // Gray
+  }
+};
 
 /**
  * Get productivity color for a category
@@ -178,7 +172,7 @@ function applyAccentColor(color) {
   document.documentElement.style.setProperty('--primary-dark', darkColor);
   
   // Update productivity group color if it uses primary
-  if (PRODUCTIVITY_GROUPS.productive.color === '#007AFF') {
+  if (PRODUCTIVITY_GROUPS.productive.color === '#8BAF5B') {
     PRODUCTIVITY_GROUPS.productive.color = color;
   }
 }
@@ -511,10 +505,10 @@ function renderMostUsedItemsRealTime(container) {
 
   // Update only the time elements to avoid flickering
   visibleSites.forEach((site, index) => {
-    const item = container.querySelector(`.most-used-item-new[data-site-index="${index}"]`);
-    if (item) {
-      const timeEl = item.querySelector('.most-used-time');
-      const barEl = item.querySelector('.most-used-bar');
+    const wrapper = container.querySelector(`.most-used-item-wrapper[data-site-index="${index}"]`);
+    if (wrapper) {
+      const timeEl = wrapper.querySelector('.most-used-time');
+      const barEl = wrapper.querySelector('.most-used-bar');
       if (timeEl) {
         timeEl.textContent = formatTimeWithSeconds(site.time);
       }
@@ -694,7 +688,7 @@ function setupDonutChartHover(canvas, prefix) {
 
       if (total > 0) {
         const segments = [
-          { name: 'productive', value: productive, color: PRODUCTIVITY_GROUPS.productive.color, label: 'Productive' },
+          { name: 'productive', value: productive, color: '#8BAF5B', label: 'Productive' },
           { name: 'unproductive', value: unproductive, color: '#FF6B6B', label: 'Unproductive' },
           { name: 'neutral', value: neutral, color: '#8E8E93', label: 'Neutral' }
         ];
@@ -933,7 +927,35 @@ function groupBySubcategories(categories) {
   return grouped;
 }
 
+/**
+ * Get color for subcategory (use parent category color with slight variation)
+ */
+function getSubcategoryColor(category, subcategory, index = 0) {
+  const categoryInfo = CATEGORIES[category];
+  if (!categoryInfo) return '#8E8E93';
 
+  const baseColor = categoryInfo.color;
+
+  // For 'general' subcategory, use base color
+  if (subcategory === 'general') {
+    return baseColor;
+  }
+
+  // Create variations by adjusting brightness
+  // Parse hex color
+  const hex = baseColor.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+
+  // Adjust brightness based on index (darker for first, lighter for later)
+  const factor = 1 - (index * 0.15);
+  const newR = Math.min(255, Math.max(0, Math.round(r * factor)));
+  const newG = Math.min(255, Math.max(0, Math.round(g * factor)));
+  const newB = Math.min(255, Math.max(0, Math.round(b * factor)));
+
+  return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+}
 
 /**
  * Get top sites for given categories from category data
@@ -1014,7 +1036,7 @@ function findHoveredSegment(mouseY, categories, totalTime, maxTime, chartTop, ma
         if (colorMode === 'productivity') {
           const prodGroup = getProductivityGroup(category);
           const prodName = prodGroup === 0 ? 'Productive' : (prodGroup === 2 ? 'Unproductive' : 'Neutral');
-          const prodColor = prodGroup === 0 ? PRODUCTIVITY_GROUPS.productive.color : (prodGroup === 2 ? '#FF6B6B' : '#8E8E93');
+          const prodColor = prodGroup === 0 ? '#8BAF5B' : (prodGroup === 2 ? '#FF6B6B' : '#8E8E93');
           return { name: prodName, color: prodColor, time: segmentTime };
         } else {
           const catInfo = categoriesInfo[category] || { name: category, color: '#8E8E93' };
@@ -1219,7 +1241,7 @@ function drawDonutChartStatic(canvas, values) {
     ctx.stroke();
   } else {
     const segments = [
-      { value: values.productive, color: PRODUCTIVITY_GROUPS.productive.color },
+      { value: values.productive, color: '#8BAF5B' },
       { value: values.unproductive, color: '#FF6B6B' },
       { value: values.neutral, color: '#8E8E93' }
     ];
@@ -1290,7 +1312,7 @@ function animateDonutChart(canvas, fromValues, toValues, duration) {
     } else {
       // Draw segments
       const segments = [
-        { value: current.productive, color: PRODUCTIVITY_GROUPS.productive.color },
+        { value: current.productive, color: '#8BAF5B' },
         { value: current.unproductive, color: '#FF6B6B' },
         { value: current.neutral, color: '#8E8E93' }
       ];
@@ -1361,9 +1383,6 @@ tabBtns.forEach(btn => {
     if (tabName === 'week') {
       syncWeekOffsetToDate(currentTodayDate);
     }
-
-    // Update header navigation to match active tab mode
-    updateHeaderNav();
 
     // Wait for layout to complete before rendering charts
     requestAnimationFrame(() => {
@@ -1449,10 +1468,16 @@ navItems.forEach(item => {
       loadLimits();
     } else if (pageName === 'settings') {
       loadSettingsUI();
+    } else if (pageName === 'goals') {
+      loadGoals();
     } else if (pageName === 'flowchart') {
       loadFlowChart();
+    } else if (pageName === 'focus') {
+      loadFocusMode();
     } else if (pageName === 'reports') {
       loadReports();
+    } else if (pageName === 'downtime') {
+      loadDowntimePage();
     }
   });
 });
@@ -1711,14 +1736,7 @@ document.getElementById('privacyHideTimeline')?.addEventListener('change', async
 document.getElementById('exportDataBtn')?.addEventListener('click', exportData);
 document.getElementById('clearDataBtn')?.addEventListener('click', async () => {
   if (confirm('Are you sure you want to clear ALL data? This cannot be undone.')) {
-    try {
-      await chrome.runtime.sendMessage({ type: 'CLEAR_ALL_DATA' });
-      alert('All data has been cleared. The page will reload.');
-      location.reload();
-    } catch (error) {
-      console.error('Error clearing data:', error);
-      alert('Failed to clear data. Please try again.');
-    }
+    alert('Clear data functionality not yet implemented');
   }
 });
 
@@ -1775,6 +1793,8 @@ async function loadCategories() {
 let limitsEnabled = true;
 let categoryLimits = {};
 let categoryDomainUsage = {};
+let selectedLimitCategory = null;
+let limitModalStep = 1;
 
 async function loadLimits() {
   await loadCategories();
@@ -1796,8 +1816,7 @@ async function loadLimits() {
     const limits = limitsResponse.data || [];
     categoryLimits = {};
     limits.forEach(limit => {
-      const key = limit.id || `cat:${limit.category}`;
-      categoryLimits[key] = limit;
+      categoryLimits[limit.category] = limit;
     });
 
     // Load domain usage for categories (last 7 days)
@@ -1860,13 +1879,11 @@ async function renderActiveLimits() {
     console.error('Error getting today stats for limits:', e);
   }
 
-  container.innerHTML = activeLimits.map(([limitId, limit]) => {
-    const targetType = limit.targetType || 'category';
-    const targetValue = limit.targetValue || null;
-    const category = limit.category || limitId;
-
+  container.innerHTML = activeLimits.map(([category, limit]) => {
+    const info = categoriesInfo[category] || { icon: '📱', name: category };
     const hours = Math.floor(limit.dailyLimit / 3600000);
     const minutes = Math.floor((limit.dailyLimit % 3600000) / 60000);
+    // Format time: "1 hour" if minutes is 0, otherwise "1h 30m"
     let timeStr;
     if (minutes === 0) {
       timeStr = hours === 1 ? '1 hour' : `${hours} hours`;
@@ -1877,30 +1894,33 @@ async function renderActiveLimits() {
     }
     const enabled = limit.enabled !== false;
 
-    // Calculate current usage based on target type
+    // Calculate current usage for this limit
     let currentUsage = 0;
     const domains = todayStats.domains || {};
     const categories = todayStats.categories || {};
-
-    if (targetType === 'group' && targetValue) {
-      const groupDef = PRODUCTIVITY_GROUPS[targetValue];
-      if (groupDef) {
-        groupDef.categories.forEach(cat => {
-          currentUsage += categories[cat]?.time || 0;
+    
+    if (limit.includeSites && limit.includeSites.length > 0) {
+      // Site-specific limit
+      limit.includeSites.forEach(site => {
+        const siteLower = site.toLowerCase();
+        Object.entries(domains).forEach(([domain, data]) => {
+          if (domain.toLowerCase().includes(siteLower)) {
+            currentUsage += data.time || 0;
+          }
         });
-      }
-    } else if (targetType === 'subcategory' && targetValue) {
-      currentUsage = categories[category]?.subcategories?.[targetValue]?.time || 0;
-    } else if (targetType === 'domain' && targetValue) {
-      Object.entries(domains).forEach(([domain, data]) => {
-        if (domain.toLowerCase().includes(targetValue.toLowerCase())) {
-          currentUsage += data.time || 0;
+      });
+    } else if (limit.includeCategories && limit.includeCategories.length > 0) {
+      // Category limit
+      limit.includeCategories.forEach(cat => {
+        if (categories[cat]) {
+          currentUsage += categories[cat].time || 0;
         }
       });
     } else {
-      // Category-level
-      const catKey = limitId.startsWith('cat:') ? limitId.slice(4) : category;
-      currentUsage = categories[catKey]?.time || 0;
+      // Single category (legacy)
+      if (categories[category]) {
+        currentUsage = categories[category].time || 0;
+      }
     }
 
     const usagePercent = Math.min(100, (currentUsage / limit.dailyLimit) * 100);
@@ -1908,38 +1928,98 @@ async function renderActiveLimits() {
     const isOverLimit = currentUsage >= limit.dailyLimit;
     const isNearLimit = usagePercent >= 80 && !isOverLimit;
 
-    // Display name, sub-label, and icon based on target type
-    let displayName, subLabel = '', iconHtml, badgeHtml = '';
+    // Check for domains and categories in the limit
+    const hasDomains = limit.includeSites && limit.includeSites.length > 0;
+    const hasCategories = limit.includeCategories && limit.includeCategories.length > 0;
+    let displayName, subLabel, iconHtml;
 
-    if (targetType === 'group' && targetValue) {
-      const groupDef = PRODUCTIVITY_GROUPS[targetValue];
-      displayName = `All ${groupDef?.name || targetValue}`;
-      subLabel = groupDef?.categories.map(c => categoriesInfo[c]?.name || c).join(', ') || '';
-      iconHtml = `<span class="active-limit-icon" style="color:${groupDef?.color || '#666'}">${groupDef?.icon || '●'}</span>`;
-      badgeHtml = `<span class="limit-target-badge limit-target-grp">Group</span>`;
-    } else if (targetType === 'subcategory' && targetValue) {
-      const info = categoriesInfo[category] || { icon: '📱', name: category };
-      displayName = getSubcategoryName(targetValue);
-      subLabel = info.name;
-      iconHtml = `<span class="active-limit-icon">${info.icon}</span>`;
-      badgeHtml = `<span class="limit-target-badge limit-target-sub">Subcategory</span>`;
-    } else if (targetType === 'domain' && targetValue) {
-      const info = categoriesInfo[category] || { icon: '📱', name: category };
-      displayName = targetValue;
-      subLabel = info.name;
-      iconHtml = `<img class="active-limit-favicon" src="https://www.google.com/s2/favicons?domain=${targetValue}&sz=32" alt="" onerror="this.style.display='none'">`;
-      badgeHtml = `<span class="limit-target-badge limit-target-dom">Domain</span>`;
+    if (hasDomains || hasCategories) {
+      const domainParts = [];
+      const categorySet = new Set();
+
+      // Add category names from includeCategories
+      if (hasCategories) {
+        limit.includeCategories.forEach(cat => {
+          const catInfo = categoriesInfo[cat];
+          if (catInfo) {
+            categorySet.add(catInfo.name);
+          }
+        });
+      }
+
+      // Add domain names and collect their categories
+      if (hasDomains) {
+        limit.includeSites.forEach(domain => {
+          domainParts.push(domain);
+          // Find category for this domain from categoryDomainUsage
+          Object.entries(categoryDomainUsage).forEach(([cat, domains]) => {
+            if (domains[domain]) {
+              const catInfo = categoriesInfo[cat];
+              if (catInfo) categorySet.add(catInfo.name);
+            }
+          });
+        });
+      }
+
+      // Generate icon(s) for domains - show favicons
+      if (hasDomains) {
+        if (domainParts.length === 1) {
+          iconHtml = `<img class="active-limit-favicon" src="https://www.google.com/s2/favicons?domain=${domainParts[0]}&sz=32" alt="" onerror="this.style.display='none'">`;
+        } else {
+          // Show stacked favicons for multiple domains
+          const faviconStack = domainParts.slice(0, 3).map((domain, idx) => 
+            `<img class="active-limit-favicon stacked" style="z-index:${3-idx}; margin-left:${idx > 0 ? '-8px' : '0'}" src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" alt="" onerror="this.style.display='none'">`
+          ).join('');
+          iconHtml = `<div class="active-limit-favicon-stack">${faviconStack}</div>`;
+        }
+      } else {
+        // Category icon
+        iconHtml = `<span class="active-limit-icon">${info.icon}</span>`;
+      }
+
+      // Format domain display: show first 2 items, then "+N more"
+      if (domainParts.length === 1) {
+        displayName = domainParts[0];
+      } else if (domainParts.length === 2) {
+        displayName = `${domainParts[0]}, ${domainParts[1]}`;
+      } else if (domainParts.length > 2) {
+        displayName = `${domainParts[0]}, ${domainParts[1]} <span class="active-limit-more">+${domainParts.length - 2} more</span>`;
+      } else if (hasCategories) {
+        // Only categories, no domains
+        const catNames = Array.from(categorySet);
+        if (catNames.length === 1) {
+          displayName = catNames[0];
+        } else if (catNames.length === 2) {
+          displayName = `${catNames[0]}, ${catNames[1]}`;
+        } else {
+          displayName = `${catNames[0]}, ${catNames[1]} <span class="active-limit-more">+${catNames.length - 2} more</span>`;
+        }
+      }
+
+      // Format category label: max 2 categories, then +n more
+      const catNames = Array.from(categorySet);
+      if (catNames.length === 0) {
+        subLabel = '';
+      } else if (catNames.length === 1) {
+        subLabel = catNames[0];
+      } else if (catNames.length === 2) {
+        subLabel = `${catNames[0]}, ${catNames[1]}`;
+      } else {
+        subLabel = `${catNames[0]}, ${catNames[1]} <span class="active-limit-more">+${catNames.length - 2} more</span>`;
+      }
     } else {
-      const catKey = limitId.startsWith('cat:') ? limitId.slice(4) : category;
-      const info = categoriesInfo[catKey] || { icon: '📱', name: catKey };
       displayName = info.name;
+      subLabel = '';
       iconHtml = `<span class="active-limit-icon">${info.icon}</span>`;
     }
 
+    // Calculate remaining time
     const remainingMs = Math.max(0, limit.dailyLimit - currentUsage);
     const remainingStr = remainingMs > 0 ? formatTime(remainingMs) : 'Over limit';
-
-    let statusClass = '', statusText = '';
+    
+    // Visual status
+    let statusClass = '';
+    let statusText = '';
     if (isOverLimit) {
       statusClass = 'status-over';
       statusText = `Over by ${formatTime(currentUsage - limit.dailyLimit)}`;
@@ -1952,21 +2032,20 @@ async function renderActiveLimits() {
     }
 
     return `
-      <div class="active-limit-item ${enabled ? '' : 'disabled'} ${isOverLimit ? 'over-limit' : ''} ${isNearLimit ? 'near-limit' : ''}" data-limit-id="${limitId}">
+      <div class="active-limit-item ${enabled ? '' : 'disabled'} ${isOverLimit ? 'over-limit' : ''} ${isNearLimit ? 'near-limit' : ''}" data-category="${category}">
         <div class="active-limit-header">
           ${iconHtml}
           <div class="active-limit-text">
             <span class="active-limit-name">${displayName}</span>
-            ${subLabel ? `<span class="active-limit-category">${subLabel}</span>` : ''}
-            ${badgeHtml}
+            ${subLabel && hasDomains ? `<span class="active-limit-category">${subLabel}</span>` : ''}
           </div>
           <div class="active-limit-actions">
             <label class="toggle toggle-small">
-              <input type="checkbox" class="limit-toggle-checkbox" data-limit-id="${limitId}" ${enabled ? 'checked' : ''}>
+              <input type="checkbox" class="limit-toggle-checkbox" data-category="${category}" ${enabled ? 'checked' : ''}>
               <span class="toggle-slider"></span>
             </label>
-            <button class="btn-icon limit-modify-btn" data-limit-id="${limitId}" title="Modify">✎</button>
-            <button class="btn-icon limit-delete-btn" data-limit-id="${limitId}" title="Delete">✕</button>
+            <button class="btn-icon limit-modify-btn" data-category="${category}" title="Modify">✎</button>
+            <button class="btn-icon limit-delete-btn" data-category="${category}" title="Delete">✕</button>
           </div>
         </div>
         <div class="active-limit-visual">
@@ -2013,15 +2092,18 @@ function renderCategoryDomains(category) {
 document.getElementById('activeLimitsList')?.addEventListener('click', (e) => {
   const target = e.target;
 
+  // Handle modify button click
   if (target.classList.contains('limit-modify-btn')) {
-    openEditLimitModal(target.dataset.limitId);
+    const category = target.dataset.category;
+    openEditLimitModal(category);
   }
 
+  // Handle delete button click
   if (target.classList.contains('limit-delete-btn')) {
-    const limitId = target.dataset.limitId;
+    const category = target.dataset.category;
     if (confirm('Delete this limit?')) {
-      chrome.runtime.sendMessage({ type: 'DELETE_LIMIT', id: limitId }).then(() => {
-        delete categoryLimits[limitId];
+      chrome.runtime.sendMessage({ type: 'DELETE_LIMIT', category }).then(() => {
+        delete categoryLimits[category];
         renderActiveLimits();
       });
     }
@@ -2031,24 +2113,35 @@ document.getElementById('activeLimitsList')?.addEventListener('click', (e) => {
 document.getElementById('activeLimitsList')?.addEventListener('change', (e) => {
   const target = e.target;
 
+  // Handle toggle checkbox change
   if (target.classList.contains('limit-toggle-checkbox')) {
-    toggleCategoryLimit(target.dataset.limitId, target.checked);
+    const category = target.dataset.category;
+    const enabled = target.checked;
+    toggleCategoryLimit(category, enabled);
   }
 });
 
-async function toggleCategoryLimit(limitId, enabled) {
+async function toggleCategoryLimit(category, enabled) {
   try {
-    let limit = categoryLimits[limitId];
-    if (!limit) return;
-    limit = { ...limit, enabled };
+    let limit = categoryLimits[category];
+    if (!limit) {
+      limit = {
+        dailyLimit: 3600000,
+        enabled: enabled,
+        alertAt: 0.9,
+        blockMethod: 'soft'
+      };
+    } else {
+      limit = { ...limit, enabled };
+    }
 
     await chrome.runtime.sendMessage({
       type: 'SET_LIMIT',
-      category: limit.category || limitId,
+      category,
       limit
     });
 
-    categoryLimits[limitId] = limit;
+    categoryLimits[category] = limit;
   } catch (error) {
     console.error('Error toggling category limit:', error);
   }
@@ -2071,49 +2164,587 @@ document.getElementById('limitsEnabled')?.addEventListener('change', async (e) =
   }
 });
 
-// ==================== GOALS (mockup only) ====================
+// ==================== GOALS MANAGEMENT ====================
 let goals = [];
+let editingGoalId = null;
+
+async function loadGoals() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    const settings = response.data || {};
+    goals = settings.goals || [];
+    renderGoalsList();
+    updateDashboardGoals();
+    // Load achievements on Goals page
+    await loadAchievements();
+  } catch (error) {
+    console.error('Error loading goals:', error);
+  }
+}
+
+async function saveGoals() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    const settings = response.data || {};
+    settings.goals = goals;
+    await chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings });
+  } catch (error) {
+    console.error('Error saving goals:', error);
+  }
+}
 
 function getGoalTypeInfo(type) {
   const types = {
-    'productive': { name: 'Productive Time', icon: '💪', categories: ['workspace', 'education'] },
+    'productive': { name: 'Productive Time', icon: '💪', categories: ['productivity', 'education'] },
     'learning': { name: 'Learning', icon: '📚', categories: ['education'] },
     'limit_unproductive': { name: 'Limit Unproductive', icon: '🚫', categories: ['entertainment', 'social', 'games'] }
   };
   return types[type] || { name: type, icon: '🎯', categories: [] };
 }
 
-// [MOCKUP] Dashboard goals display - only used with mock data
-async function updateDashboardGoals() {
-  if (goals.length === 0) return;
+// Calculate 30-day average for a goal type's categories
+async function calculate30DayAverage(goalType) {
+  console.log('[Goal] Calculating 30-day average for:', goalType);
+  const typeInfo = getGoalTypeInfo(goalType);
+  const categories = typeInfo.categories;
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // Build date list for last 30 days
+  const dates = [];
+  for (let i = 1; i <= 30; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    dates.push(formatDateLocal(date));
+  }
+  
+  console.log('[Goal] Fetching stats for dates:', dates.slice(0, 3), '...');
+  
+  // Fetch all dates in parallel
+  const results = await Promise.all(
+    dates.map(dateStr => 
+      chrome.runtime.sendMessage({ type: 'GET_DATE_STATS', date: dateStr })
+        .catch(err => {
+          console.error(`[Goal] Error fetching stats for ${dateStr}:`, err);
+          return null;
+        })
+    )
+  );
+  
+  let totalTime = 0;
+  let validDays = 0;
+  
+  results.forEach((response) => {
+    // Data structure: response.data.stats.categories or response.data.categories
+    const cats = response?.data?.stats?.categories || response?.data?.categories;
+    if (cats) {
+      let dayTime = 0;
+      categories.forEach(cat => {
+        if (cats[cat]) {
+          dayTime += cats[cat].time || 0;
+        }
+      });
+      
+      // Only count days with some activity
+      if (dayTime > 0) {
+        totalTime += dayTime;
+        validDays++;
+      }
+    }
+  });
+  
+  const avg = validDays > 0 ? Math.round(totalTime / validDays) : 0;
+  console.log('[Goal] Average calculated:', avg, 'ms from', validDays, 'valid days');
+  
+  // Return average (or 0 if no data)
+  return avg;
+}
 
-  const todayContainer = document.getElementById('todayGoalsDisplay');
-  const weekContainer = document.getElementById('weekGoalsDisplay');
-  if (!todayContainer && !weekContainer) return;
+// Generate smart presets based on 30-day average
+// isLimitGoal: for limit goals, show decrease options; for productive goals, show increase options
+function generateSmartPresets(averageMs, isLimitGoal = false) {
+  if (averageMs <= 0) {
+    // Fallback to fixed presets if no data
+    if (isLimitGoal) {
+      // For limit goals: smaller defaults
+      return [
+        { label: '15m', ms: 15 * 60000, percent: null },
+        { label: '30m', ms: 30 * 60000, percent: null },
+        { label: '1h', ms: 60 * 60000, percent: null },
+        { label: '1.5h', ms: 90 * 60000, percent: null },
+        { label: '2h', ms: 120 * 60000, percent: null }
+      ];
+    } else {
+      return [
+        { label: '30m', ms: 30 * 60000, percent: null },
+        { label: '1h', ms: 60 * 60000, percent: null },
+        { label: '2h', ms: 120 * 60000, percent: null },
+        { label: '3h', ms: 180 * 60000, percent: null },
+        { label: '4h', ms: 240 * 60000, percent: null }
+      ];
+    }
+  }
+  
+  // For productive goals: average and increase options (no decrease - you want MORE productive time)
+  // For limit goals: decrease and average options (no increase - you want LESS unproductive time)
+  let presets;
+  if (isLimitGoal) {
+    presets = [
+      { percent: -30, multiplier: 0.70 },
+      { percent: -20, multiplier: 0.80 },
+      { percent: -10, multiplier: 0.90 },
+      { percent: 0, multiplier: 1.0 },
+      { percent: 10, multiplier: 1.10 }
+    ];
+  } else {
+    presets = [
+      { percent: -10, multiplier: 0.90 },
+      { percent: 0, multiplier: 1.0 },
+      { percent: 10, multiplier: 1.10 },
+      { percent: 20, multiplier: 1.20 },
+      { percent: 30, multiplier: 1.30 }
+    ];
+  }
+  
+  return presets.map(p => {
+    const ms = Math.round(averageMs * p.multiplier);
+    const hours = ms / 3600000;
+    let label;
+    
+    if (hours < 1) {
+      label = `${Math.round(ms / 60000)}m`;
+    } else if (hours % 1 === 0) {
+      label = `${Math.floor(hours)}h`;
+    } else {
+      label = `${hours.toFixed(1)}h`;
+    }
+    
+    return {
+      label,
+      ms,
+      percent: p.percent,
+      isAverage: p.percent === 0
+    };
+  });
+}
 
+// Format time for preset display (compact)
+function formatPresetTime(ms) {
+  const hours = ms / 3600000;
+  if (hours < 1) {
+    return `${Math.round(ms / 60000)}m`;
+  } else if (hours % 0.5 === 0) {
+    return hours % 1 === 0 ? `${hours}h` : `${hours.toFixed(1)}h`;
+  }
+  return `${hours.toFixed(1)}h`;
+}
+
+// Render smart presets in the modal
+function renderSmartPresets(presets, currentMs = null) {
+  const container = document.getElementById('goalTimePresets');
+  if (!container) return;
+  
+  container.innerHTML = presets.map(preset => {
+    const isActive = currentMs !== null && Math.abs(preset.ms - currentMs) < 60000; // Within 1 minute tolerance
+    const percentLabel = preset.percent !== null 
+      ? (preset.percent === 0 ? 'avg' : `${preset.percent > 0 ? '+' : ''}${preset.percent}%`)
+      : '';
+    
+    return `
+      <button type="button" class="preset-btn ${preset.isAverage ? 'average' : ''} ${isActive ? 'active' : ''}" 
+              data-ms="${preset.ms}">
+        <span class="preset-time">${preset.label}</span>
+        ${percentLabel ? `<span class="preset-percent">${percentLabel}</span>` : ''}
+      </button>
+    `;
+  }).join('');
+}
+
+async function renderGoalsList() {
+  const container = document.getElementById('goalsList');
+  if (!container) return;
+
+  if (goals.length === 0) {
+    container.innerHTML = '<div class="goals-empty">No goals set yet. Add your first goal!</div>';
+    return;
+  }
+
+  // Get current stats for progress visualization
   let todayStats = null;
   let weekStats = null;
   try {
+    const [todayResponse, weekResponse] = await Promise.all([
+      chrome.runtime.sendMessage({ type: 'GET_TODAY_STATS' }),
+      chrome.runtime.sendMessage({ type: 'GET_WEEKLY_STATS' })
+    ]);
+    todayStats = todayResponse.data;
+    weekStats = weekResponse.data;
+  } catch (error) {
+    console.error('Error getting stats for goals list:', error);
+  }
+
+  container.innerHTML = goals.map((goal, index) => {
+    const typeInfo = getGoalTypeInfo(goal.type);
+    const comparison = goal.comparison === 'min' ? 'At least' : 'At most';
+    const targetTime = formatTime(goal.targetTime);
+    const frequency = goal.frequency === 'daily' ? 'Daily' : 'Weekly';
+
+    // Check if today is an active day for this goal
+    const today = new Date().getDay();
+    const activeDays = goal.activeDays || [0, 1, 2, 3, 4, 5, 6];
+    const isActiveToday = activeDays.includes(today);
+
+    // Calculate current progress
+    let currentTime = 0;
+    const stats = goal.frequency === 'daily' ? todayStats : weekStats;
+    if (stats && isActiveToday) {
+      const categories = goal.frequency === 'daily' 
+        ? (stats.categories || {}) 
+        : (stats.weeklyCategories || {});
+      typeInfo.categories.forEach(cat => {
+        if (categories[cat]) {
+          currentTime += categories[cat].time || 0;
+        }
+      });
+    }
+
+    const progress = goal.targetTime > 0 ? Math.min((currentTime / goal.targetTime) * 100, 100) : 0;
+    const isAchieved = goal.comparison === 'min' ? currentTime >= goal.targetTime : currentTime <= goal.targetTime;
+    const isOverLimit = goal.comparison === 'max' && currentTime > goal.targetTime;
+    const statusClass = isAchieved ? 'achieved' : (isOverLimit ? 'over-limit' : 'in-progress');
+
+    // Progress bar color - use accent color from CSS variable
+    const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#8BAF5B';
+    let progressBarColor = accentColor;
+    if (goal.comparison === 'max') {
+      if (progress >= 100) progressBarColor = '#FF3B30';
+      else if (progress >= 80) progressBarColor = '#FF9500';
+      else progressBarColor = '#34C759';
+    } else {
+      if (isAchieved) progressBarColor = '#34C759';
+    }
+
+    // Circular progress calculation
+    const radius = 32;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (Math.min(progress, 100) / 100) * circumference;
+
+    // Generate activity blocks (last 12 weeks for weekly, last 8 weeks for daily)
+    const activityBlocksHtml = generateActivityBlocks(goal, typeInfo);
+    
+    // Format created date
+    const createdAt = goal.createdAt ? new Date(goal.createdAt) : null;
+    const createdDateStr = createdAt ? `Since ${createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : '';
+    
+    // Calculate streak
+    const streak = calculateGoalStreak(goal, typeInfo);
+    
+    // Format active days display
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const activeDaysStr = activeDays.length === 7 ? 'Every day' : activeDays.map(d => dayNames[d]).join(', ');
+
+    return `
+      <div class="goal-item ${statusClass}${!isActiveToday ? ' inactive-today' : ''}" data-goal-id="${index}">
+        <div class="goal-item-left">
+          <div class="goal-item-progress">
+            <svg class="goal-item-ring" viewBox="0 0 80 80">
+              <circle class="goal-item-ring-bg" cx="40" cy="40" r="${radius}" />
+              <circle class="goal-item-ring-fill" cx="40" cy="40" r="${radius}"
+                stroke="${progressBarColor}"
+                stroke-dasharray="${circumference}"
+                stroke-dashoffset="${strokeDashoffset}"
+                transform="rotate(-90 40 40)" />
+            </svg>
+            <div class="goal-item-percent">${Math.round(progress)}%</div>
+          </div>
+          <div class="goal-item-details">
+            <div class="goal-item-header">
+              <span class="goal-item-icon">${typeInfo.icon}</span>
+              <span class="goal-item-title">${typeInfo.name}</span>
+              <span class="goal-item-frequency-badge">${frequency}</span>
+              ${streak > 0 ? `<span class="goal-item-streak">🔥 ${streak}</span>` : ''}
+            </div>
+            <div class="goal-item-stats">
+              <span class="goal-item-current">${formatTime(currentTime)}</span>
+              <span class="goal-item-separator">/</span>
+              <span class="goal-item-target">${comparison} ${targetTime}</span>
+            </div>
+            <div class="goal-item-meta">
+              ${!isActiveToday ? '<span class="goal-item-inactive">Not active today</span>' : 
+                `<span class="goal-item-status ${statusClass}">${isAchieved ? 'Achieved!' : (isOverLimit ? 'Over Limit!' : `${formatTime(Math.max(0, goal.targetTime - currentTime))} left`)}</span>`}
+            </div>
+          </div>
+        </div>
+        <div class="goal-item-right">
+          <div class="goal-activity-calendar">
+            ${activityBlocksHtml}
+          </div>
+          <div class="goal-actions">
+            <button class="btn-icon goal-edit-btn" data-goal-id="${index}" title="Edit">✏️</button>
+            <button class="btn-icon goal-delete-btn" data-goal-id="${index}" title="Delete">🗑️</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Generate activity calendar (8 weeks grid) with day labels and legend
+function generateActivityBlocks(goal, typeInfo) {
+  const history = goal.history || {};
+  const activeDays = goal.activeDays || [0, 1, 2, 3, 4, 5, 6];
+  const blocks = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // Generate 8 weeks (56 days) in a calendar grid
+  const numWeeks = 8;
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - (numWeeks * 7) + 1);
+  
+  // Adjust to start from Sunday
+  const startDayOfWeek = startDate.getDay();
+  startDate.setDate(startDate.getDate() - startDayOfWeek);
+  
+  // Day labels (only M, W, F for compact display)
+  const dayLabels = ['', 'M', '', 'W', '', 'F', ''];
+  
+  for (let week = 0; week < numWeeks; week++) {
+    for (let day = 0; day < 7; day++) {
+      const currentDate = new Date(startDate);
+      currentDate.setDate(startDate.getDate() + (week * 7) + day);
+      
+      const dateKey = formatDateLocal(currentDate);
+      const dayOfWeek = currentDate.getDay();
+      const isActive = activeDays.includes(dayOfWeek);
+      const isFuture = currentDate > today;
+      const isToday = dateKey === formatDateLocal(today);
+      const isBeforeCreated = goal.createdAt && currentDate < new Date(goal.createdAt);
+      
+      let level = 0;
+      let percent = 0;
+      
+      if (!isFuture && !isBeforeCreated && isActive) {
+        const historyEntry = history[dateKey];
+        if (historyEntry) {
+          percent = Math.round(historyEntry.progress || 0);
+          if (goal.comparison === 'min') {
+            if (percent >= 100) level = 4;
+            else if (percent >= 75) level = 3;
+            else if (percent >= 50) level = 2;
+            else if (percent > 0) level = 1;
+          } else {
+            if (percent <= 50) level = 4;
+            else if (percent <= 75) level = 3;
+            else if (percent <= 100) level = 2;
+            else level = 1;
+          }
+        }
+      }
+      
+      let blockClass = 'level-0';
+      if (isFuture) blockClass = 'future';
+      else if (isBeforeCreated) blockClass = 'before-created';
+      else if (!isActive) blockClass = 'inactive';
+      else blockClass = `level-${level}`;
+      
+      const todayClass = isToday ? ' today' : '';
+      
+      blocks.push(`<div class="cal-cell ${blockClass}${todayClass}" title="${dateKey}: ${percent}%"></div>`);
+    }
+  }
+  
+  // Build the complete calendar HTML with labels and legend
+  const dayLabelsHtml = dayLabels.map(label => 
+    `<div class="cal-day-label">${label}</div>`
+  ).join('');
+  
+  const isLimitGoal = goal.comparison === 'max';
+  const legendHtml = `
+    <div class="cal-legend">
+      <span class="cal-legend-label">${isLimitGoal ? 'More' : 'Less'}</span>
+      <div class="cal-legend-cells">
+        <div class="cal-cell level-0"></div>
+        <div class="cal-cell level-1"></div>
+        <div class="cal-cell level-2"></div>
+        <div class="cal-cell level-3"></div>
+        <div class="cal-cell level-4"></div>
+      </div>
+      <span class="cal-legend-label">${isLimitGoal ? 'Less' : 'More'}</span>
+    </div>
+  `;
+  
+  return `
+    <div class="cal-wrapper">
+      <div class="cal-day-labels">${dayLabelsHtml}</div>
+      <div class="cal-grid">${blocks.join('')}</div>
+    </div>
+    ${legendHtml}
+  `;
+}
+
+// Calculate current streak for a goal
+function calculateGoalStreak(goal, typeInfo) {
+  const history = goal.history || {};
+  const activeDays = goal.activeDays || [0, 1, 2, 3, 4, 5, 6];
+  let streak = 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // Start from yesterday (today might not be complete yet)
+  const checkDate = new Date(today);
+  checkDate.setDate(checkDate.getDate() - 1);
+  
+  while (true) {
+    const dateKey = formatDateLocal(checkDate);
+    const dayOfWeek = checkDate.getDay();
+    
+    // Skip inactive days
+    if (!activeDays.includes(dayOfWeek)) {
+      checkDate.setDate(checkDate.getDate() - 1);
+      continue;
+    }
+    
+    // Stop if before goal creation
+    if (goal.createdAt && checkDate < new Date(goal.createdAt)) break;
+    
+    const historyEntry = history[dateKey];
+    if (!historyEntry) break;
+    
+    const isAchieved = goal.comparison === 'min' 
+      ? historyEntry.progress >= 100 
+      : historyEntry.progress <= 100;
+    
+    if (isAchieved) {
+      streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      break;
+    }
+    
+    // Safety limit
+    if (streak > 365) break;
+  }
+  
+  return streak;
+}
+
+async function updateDashboardGoals() {
+  const todayContainer = document.getElementById('todayGoalsDisplay');
+  const weekContainer = document.getElementById('weekGoalsDisplay');
+
+  if (!todayContainer && !weekContainer) return;
+
+  // Get current stats
+  let todayStats = null;
+  let weekStats = null;
+
+  try {
     const todayResponse = await chrome.runtime.sendMessage({ type: 'GET_TODAY_STATS' });
     todayStats = todayResponse.data;
+
     const weekResponse = await chrome.runtime.sendMessage({ type: 'GET_WEEKLY_STATS' });
     weekStats = weekResponse.data;
   } catch (error) {
     console.error('Error getting stats for goals:', error);
   }
 
+  // Update goal history for today (for daily goals)
+  await updateGoalHistory(todayStats);
+
+  // Filter and render daily goals
   const dailyGoals = goals.filter(g => g.frequency === 'daily');
   const weeklyGoals = goals.filter(g => g.frequency === 'weekly');
 
-  if (todayContainer && dailyGoals.length > 0) {
-    todayContainer.innerHTML = dailyGoals.map(goal => renderGoalCard(goal, todayStats, 'daily')).join('');
+  if (todayContainer) {
+    if (dailyGoals.length === 0) {
+      todayContainer.innerHTML = '<div class="goals-empty">No daily goals. <a href="#" class="goals-add-link" data-page="goals">Add a goal</a></div>';
+    } else {
+      todayContainer.innerHTML = dailyGoals.map(goal => renderGoalCard(goal, todayStats, 'daily')).join('');
+    }
   }
-  if (weekContainer && weeklyGoals.length > 0) {
-    weekContainer.innerHTML = weeklyGoals.map(goal => renderGoalCard(goal, weekStats, 'weekly')).join('');
+
+  if (weekContainer) {
+    if (weeklyGoals.length === 0) {
+      weekContainer.innerHTML = '<div class="goals-empty">No weekly goals. <a href="#" class="goals-add-link" data-page="goals">Add a goal</a></div>';
+    } else {
+      weekContainer.innerHTML = weeklyGoals.map(goal => renderGoalCard(goal, weekStats, 'weekly')).join('');
+    }
   }
 }
 
-// [MOCKUP] Check if a goal is achieved
+// Track which goals have been notified today
+const notifiedGoals = new Set();
+
+// Update goal history with today's progress
+async function updateGoalHistory(todayStats) {
+  if (!todayStats || goals.length === 0) return;
+
+  const todayKey = getTodayDate();
+  const today = new Date().getDay();
+  let hasChanges = false;
+
+  for (const goal of goals) {
+    if (goal.frequency !== 'daily') continue;
+
+    const activeDays = goal.activeDays || [0, 1, 2, 3, 4, 5, 6];
+    if (!activeDays.includes(today)) continue;
+
+    const typeInfo = getGoalTypeInfo(goal.type);
+    let currentTime = 0;
+    const categories = todayStats.categories || {};
+    
+    typeInfo.categories.forEach(cat => {
+      if (categories[cat]) {
+        currentTime += categories[cat].time || 0;
+      }
+    });
+
+    const progress = goal.targetTime > 0 ? (currentTime / goal.targetTime) * 100 : 0;
+    
+    // Check if goal is newly achieved
+    const wasAchieved = goal.history?.[todayKey]?.progress >= 100;
+    const isNowAchieved = checkGoalAchieved(goal, currentTime);
+    const goalKey = `${goal.type}-${goal.targetTime}-${todayKey}`;
+    
+    if (isNowAchieved && !wasAchieved && !notifiedGoals.has(goalKey)) {
+      // Goal just achieved! Send notification
+      notifiedGoals.add(goalKey);
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'GOAL_ACHIEVED',
+          goal: goal
+        });
+      } catch (e) {
+        console.debug('Could not send goal notification:', e);
+      }
+    }
+
+    // Initialize history if not exists
+    if (!goal.history) {
+      goal.history = {};
+    }
+
+    // Update today's history
+    goal.history[todayKey] = {
+      progress: progress,
+      time: currentTime,
+      target: goal.targetTime,
+      achieved: isNowAchieved,
+      updatedAt: Date.now()
+    };
+
+    hasChanges = true;
+  }
+
+  // Save updated goals if there were changes
+  if (hasChanges) {
+    await saveGoals();
+  }
+}
+
+// Check if a goal is achieved based on type
 function checkGoalAchieved(goal, currentTime) {
   if (goal.type === 'limit_unproductive') {
     // For limit goals: achieved if under the limit
@@ -2214,99 +2845,452 @@ function renderGoalCard(goal, stats, period) {
   `;
 }
 
+// Store current averages for each goal type
+let goalTypeAverages = {};
+
+async function openGoalModal(goalId = null) {
+  const modal = document.getElementById('addGoalModal');
+  const title = document.getElementById('goalModalTitle');
+
+  editingGoalId = goalId;
+
+  if (goalId !== null && goals[goalId]) {
+    const goal = goals[goalId];
+    title.textContent = 'Edit Goal';
+    
+    // Set goal type pill (setTimeToAvg=false to keep existing time)
+    await setGoalTypePill(goal.type, false);
+    
+    // Set comparison toggle
+    setGoalComparisonToggle(goal.comparison);
+    
+    // Set time (existing goal's time)
+    const hours = Math.floor(goal.targetTime / 3600000);
+    const minutes = Math.floor((goal.targetTime % 3600000) / 60000);
+    setGoalTime(hours, minutes);
+    
+    // Update presets to show current time as active
+    updateSmartPresetsActive(goal.targetTime);
+    
+    // Set active days
+    const activeDays = goal.activeDays || [0, 1, 2, 3, 4, 5, 6];
+    document.querySelectorAll('#goalDayCircles .day-circle').forEach(btn => {
+      const day = parseInt(btn.dataset.day);
+      btn.classList.toggle('active', activeDays.includes(day));
+    });
+  } else {
+    title.textContent = 'Add Goal';
+    
+    // Reset to defaults (setTimeToAvg=true to set time to average)
+    await setGoalTypePill('productive', true);
+    setGoalComparisonToggle('min');
+    
+    // Reset all days to active
+    document.querySelectorAll('#goalDayCircles .day-circle').forEach(btn => {
+      btn.classList.add('active');
+    });
+  }
+
+  modal.classList.add('active');
+}
+
+// Update smart presets to mark current time as active
+function updateSmartPresetsActive(currentMs) {
+  document.querySelectorAll('#goalTimePresets .preset-btn').forEach(btn => {
+    const presetMs = parseInt(btn.dataset.ms);
+    const isActive = Math.abs(presetMs - currentMs) < 60000; // Within 1 minute
+    btn.classList.toggle('active', isActive);
+  });
+}
+
+// Helper functions for new UI
+// setTimeToAvg: when true, auto-set time to average (for Add mode or switching type)
+async function setGoalTypePill(type, setTimeToAvg = true) {
+  document.getElementById('goalType').value = type;
+  document.querySelectorAll('#goalTypePills .pill-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.value === type);
+  });
+  
+  // Auto-select and disable comparison based on goal type
+  const comparisonToggle = document.getElementById('goalComparisonToggle');
+  const minBtn = comparisonToggle?.querySelector('[data-value="min"]');
+  const maxBtn = comparisonToggle?.querySelector('[data-value="max"]');
+  
+  if (type === 'limit_unproductive') {
+    // Limit goals: "At most" only
+    setGoalComparisonToggle('max');
+    minBtn?.classList.add('disabled');
+    maxBtn?.classList.remove('disabled');
+  } else {
+    // Productive/Learning goals: "At least" only
+    setGoalComparisonToggle('min');
+    minBtn?.classList.remove('disabled');
+    maxBtn?.classList.add('disabled');
+  }
+  
+  // Calculate 30-day average and render smart presets
+  await loadSmartPresetsForType(type, setTimeToAvg);
+}
+
+// Load smart presets based on 30-day average for the goal type
+// If setTimeToAvg is true, also set the time input to the average value
+async function loadSmartPresetsForType(type, setTimeToAvg = false) {
+  const container = document.getElementById('goalTimePresets');
+  const avgInfoBox = document.getElementById('goalAvgInfo');
+  const avgValueEl = document.getElementById('goalAvgValue');
+  if (!container) return;
+  
+  // Show loading state
+  container.innerHTML = '<div class="presets-loading">Loading...</div>';
+  if (avgValueEl) avgValueEl.textContent = 'calculating...';
+  if (avgInfoBox) avgInfoBox.classList.remove('no-data');
+  
+  try {
+    // Check cache first
+    if (goalTypeAverages[type] === undefined) {
+      goalTypeAverages[type] = await calculate30DayAverage(type);
+    }
+    
+    const avgMs = goalTypeAverages[type];
+    
+    // Update average info display
+    if (avgValueEl) {
+      if (avgMs > 0) {
+        avgValueEl.textContent = formatTime(avgMs);
+      } else {
+        avgValueEl.textContent = 'No data yet';
+        if (avgInfoBox) avgInfoBox.classList.add('no-data');
+      }
+    }
+    
+    // Generate presets based on goal type
+    const isLimitGoal = type === 'limit_unproductive';
+    const presets = generateSmartPresets(avgMs, isLimitGoal);
+    
+    // Set time to average if requested (when switching goal type)
+    if (setTimeToAvg && avgMs > 0) {
+      // Round to nearest 15 minutes
+      const roundedMs = Math.round(avgMs / (15 * 60000)) * (15 * 60000);
+      const finalMs = roundedMs > 0 ? roundedMs : 15 * 60000; // minimum 15min
+      const hours = Math.floor(finalMs / 3600000);
+      const minutes = Math.floor((finalMs % 3600000) / 60000);
+      setGoalTime(hours, minutes);
+      renderSmartPresets(presets, finalMs);
+    } else if (setTimeToAvg && avgMs === 0) {
+      // No data, set default 2h for productive, 1h for limit
+      const defaultMs = isLimitGoal ? 3600000 : 7200000;
+      const hours = Math.floor(defaultMs / 3600000);
+      const minutes = Math.floor((defaultMs % 3600000) / 60000);
+      setGoalTime(hours, minutes);
+      renderSmartPresets(presets, defaultMs);
+    } else {
+      // Keep current time value
+      const hours = parseInt(document.getElementById('goalHours')?.value) || 0;
+      const minutes = parseInt(document.getElementById('goalMinutes')?.value) || 0;
+      const currentMs = (hours * 3600000) + (minutes * 60000);
+      renderSmartPresets(presets, currentMs);
+    }
+  } catch (error) {
+    console.error('Error loading smart presets:', error);
+    // Fallback to default presets
+    const presets = generateSmartPresets(0, false);
+    renderSmartPresets(presets, null);
+  }
+}
+
+function setGoalComparisonToggle(comparison) {
+  document.getElementById('goalComparison').value = comparison;
+  document.querySelectorAll('#goalComparisonToggle .toggle-pill').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.value === comparison);
+  });
+}
+
+function setGoalTime(hours, minutes) {
+  document.getElementById('goalHours').value = hours;
+  document.getElementById('goalMinutes').value = minutes;
+  updateGoalTimeDisplay();
+  updateGoalTimePresets();
+}
+
+function updateGoalTimeDisplay() {
+  const hours = parseInt(document.getElementById('goalHours').value) || 0;
+  const minutes = parseInt(document.getElementById('goalMinutes').value) || 0;
+  const display = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  document.getElementById('goalTimeDisplay').textContent = display;
+}
+
+function updateGoalTimePresets() {
+  const hours = parseInt(document.getElementById('goalHours').value) || 0;
+  const minutes = parseInt(document.getElementById('goalMinutes').value) || 0;
+  const currentMs = (hours * 3600000) + (minutes * 60000);
+  
+  document.querySelectorAll('#goalTimePresets .preset-btn').forEach(btn => {
+    const presetMs = parseInt(btn.dataset.ms) || 0;
+    // Within 1 minute tolerance
+    btn.classList.toggle('active', Math.abs(presetMs - currentMs) < 60000);
+  });
+}
+
+function closeGoalModal() {
+  const modal = document.getElementById('addGoalModal');
+  modal.classList.remove('active');
+  editingGoalId = null;
+}
+
+async function saveGoal() {
+  const type = document.getElementById('goalType').value;
+  const comparison = document.getElementById('goalComparison').value;
+  const hours = parseInt(document.getElementById('goalHours').value) || 0;
+  const minutes = parseInt(document.getElementById('goalMinutes').value) || 0;
+
+  const targetTime = (hours * 3600000) + (minutes * 60000);
+
+  if (targetTime <= 0) {
+    alert('Please set a valid target time.');
+    return;
+  }
+
+  // Check for duplicate type (only when adding new goal)
+  if (editingGoalId === null) {
+    const existingGoal = goals.find(g => g.type === type);
+    if (existingGoal) {
+      alert(`You already have a "${getGoalTypeInfo(type).name}" goal. Please edit the existing one instead.`);
+      return;
+    }
+  }
+
+  // Get selected active days from day circles
+  const activeDays = Array.from(document.querySelectorAll('#goalDayCircles .day-circle.active')).map(btn => parseInt(btn.dataset.day));
+
+  if (activeDays.length === 0) {
+    alert('Please select at least one day.');
+    return;
+  }
+
+  const goal = { 
+    type, 
+    comparison, 
+    targetTime, 
+    frequency: 'daily',
+    activeDays,
+    createdAt: editingGoalId !== null ? (goals[editingGoalId].createdAt || Date.now()) : Date.now(),
+    history: editingGoalId !== null ? (goals[editingGoalId].history || {}) : {}
+  };
+
+  if (editingGoalId !== null) {
+    goals[editingGoalId] = goal;
+  } else {
+    goals.push(goal);
+  }
+
+  await saveGoals();
+  renderGoalsList();
+  updateDashboardGoals();
+  closeGoalModal();
+}
+
+async function deleteGoal(goalId) {
+  if (!confirm('Are you sure you want to delete this goal?')) return;
+
+  goals.splice(goalId, 1);
+  await saveGoals();
+  renderGoalsList();
+  updateDashboardGoals();
+}
+
+// Goal event listeners
+document.getElementById('addGoalBtn')?.addEventListener('click', () => openGoalModal());
+document.getElementById('addGoalModalClose')?.addEventListener('click', closeGoalModal);
+document.getElementById('goalCancelBtn')?.addEventListener('click', closeGoalModal);
+document.getElementById('goalSaveBtn')?.addEventListener('click', saveGoal);
+
+// Close modal on overlay click
+document.getElementById('addGoalModal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'addGoalModal') closeGoalModal();
+});
+
+// Goal Type Pills
+document.getElementById('goalTypePills')?.addEventListener('click', (e) => {
+  const pill = e.target.closest('.pill-btn');
+  if (pill) {
+    setGoalTypePill(pill.dataset.value);
+  }
+});
+
+// Goal Comparison Toggle
+document.getElementById('goalComparisonToggle')?.addEventListener('click', (e) => {
+  const pill = e.target.closest('.toggle-pill');
+  if (pill && !pill.classList.contains('disabled')) {
+    setGoalComparisonToggle(pill.dataset.value);
+  }
+});
+
+// Goal Time Presets
+document.getElementById('goalTimePresets')?.addEventListener('click', (e) => {
+  const preset = e.target.closest('.preset-btn');
+  if (preset) {
+    const ms = parseInt(preset.dataset.ms);
+    const hours = Math.floor(ms / 3600000);
+    const minutes = Math.floor((ms % 3600000) / 60000);
+    setGoalTime(hours, minutes);
+    
+    // Update active state for all presets
+    document.querySelectorAll('#goalTimePresets .preset-btn').forEach(btn => {
+      btn.classList.toggle('active', btn === preset);
+    });
+  }
+});
+
+// Goal Time Adjust Buttons
+document.getElementById('goalTimeDecrease')?.addEventListener('click', () => {
+  let hours = parseInt(document.getElementById('goalHours').value) || 0;
+  let minutes = parseInt(document.getElementById('goalMinutes').value) || 0;
+  let totalMinutes = hours * 60 + minutes;
+  // Round down to previous 15-minute mark
+  totalMinutes = Math.floor((totalMinutes - 1) / 15) * 15;
+  if (totalMinutes < 15) totalMinutes = 15;
+  setGoalTime(Math.floor(totalMinutes / 60), totalMinutes % 60);
+});
+
+document.getElementById('goalTimeIncrease')?.addEventListener('click', () => {
+  let hours = parseInt(document.getElementById('goalHours').value) || 0;
+  let minutes = parseInt(document.getElementById('goalMinutes').value) || 0;
+  let totalMinutes = hours * 60 + minutes;
+  // Round up to next 15-minute mark
+  totalMinutes = Math.ceil((totalMinutes + 1) / 15) * 15;
+  if (totalMinutes > 720) totalMinutes = 720; // Max 12 hours
+  setGoalTime(Math.floor(totalMinutes / 60), totalMinutes % 60);
+});
+
+// Goal Day Circles
+document.getElementById('goalDayCircles')?.addEventListener('click', (e) => {
+  const dayCircle = e.target.closest('.day-circle');
+  if (dayCircle) {
+    dayCircle.classList.toggle('active');
+  }
+});
+
+document.getElementById('goalsList')?.addEventListener('click', (e) => {
+  const editBtn = e.target.closest('.goal-edit-btn');
+  const deleteBtn = e.target.closest('.goal-delete-btn');
+
+  if (editBtn) {
+    const goalId = parseInt(editBtn.dataset.goalId);
+    openGoalModal(goalId);
+  } else if (deleteBtn) {
+    const goalId = parseInt(deleteBtn.dataset.goalId);
+    deleteGoal(goalId);
+  }
+});
+
+// Goals add link in dashboard
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('goals-add-link')) {
+    e.preventDefault();
+    const page = e.target.dataset.page;
+    if (page) {
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.page === page);
+      });
+      document.querySelectorAll('.page').forEach(p => {
+        p.classList.toggle('active', p.id === page + 'Page');
+      });
+      loadGoals();
+    }
+  }
+});
+
 // Today navigation state
 let currentTodayDate = getTodayDate();
 
-// Navigation buttons — shared between Today and Week modes
+// Today navigation buttons
 document.getElementById('todayPrevBtn').addEventListener('click', () => {
-  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-  if (activeTab === 'week') {
-    weekOffset--;
-    loadWeekData();
-    updateHeaderNav();
-  } else {
-    stopRealTimeUpdates();
-    const date = new Date(currentTodayDate);
-    date.setDate(date.getDate() - 1);
-    currentTodayDate = formatDateLocal(date);
-    loadTodayData(currentTodayDate);
-    updateHeaderNav();
-    if (currentTodayDate === getTodayDate()) {
-      startRealTimeUpdates();
-    }
+  stopRealTimeUpdates();
+  const date = new Date(currentTodayDate);
+  date.setDate(date.getDate() - 1);
+  currentTodayDate = formatDateLocal(date);
+  loadTodayData(currentTodayDate);
+  updateTodayTitle();
+  updateTodayNextButton();
+  // Only start real-time updates if viewing today
+  if (currentTodayDate === getTodayDate()) {
+    startRealTimeUpdates();
   }
 });
 
 document.getElementById('todayNextBtn').addEventListener('click', () => {
-  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-  if (activeTab === 'week') {
-    if (weekOffset >= 0) return;
-    weekOffset++;
-    loadWeekData();
-    updateHeaderNav();
-  } else {
-    stopRealTimeUpdates();
-    const date = new Date(currentTodayDate);
-    date.setDate(date.getDate() + 1);
-    currentTodayDate = formatDateLocal(date);
-    loadTodayData(currentTodayDate);
-    updateHeaderNav();
-    if (currentTodayDate === getTodayDate()) {
-      startRealTimeUpdates();
-    }
+  stopRealTimeUpdates();
+  const date = new Date(currentTodayDate);
+  date.setDate(date.getDate() + 1);
+  currentTodayDate = formatDateLocal(date);
+  loadTodayData(currentTodayDate);
+  updateTodayTitle();
+  updateTodayNextButton();
+  // Only start real-time updates if viewing today
+  if (currentTodayDate === getTodayDate()) {
+    startRealTimeUpdates();
   }
 });
 
-/**
- * Update header navigation title and next button based on active tab
- */
-function updateHeaderNav() {
+function updateTodayTitle() {
   const title = document.getElementById('todayTitle');
-  const nextBtn = document.getElementById('todayNextBtn');
-  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+  const today = getTodayDate();
 
-  if (activeTab === 'week') {
-    // Week mode — show week range
-    const { title: weekTitle } = getDateRange();
-    title.textContent = weekTitle;
-    nextBtn.disabled = (weekOffset >= 0);
+  // Calculate yesterday's date
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = formatDateLocal(yesterdayDate);
+
+  if (currentTodayDate === today) {
+    title.textContent = `${currentTodayDate} (Today)`;
+  } else if (currentTodayDate === yesterday) {
+    title.textContent = `${currentTodayDate} (Yesterday)`;
   } else {
-    // Today mode — show date
-    const today = getTodayDate();
-    const yesterdayDate = new Date();
-    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterday = formatDateLocal(yesterdayDate);
-
-    if (currentTodayDate === today) {
-      title.textContent = `${currentTodayDate} (Today)`;
-    } else if (currentTodayDate === yesterday) {
-      title.textContent = `${currentTodayDate} (Yesterday)`;
-    } else {
-      title.textContent = currentTodayDate;
-    }
-    nextBtn.disabled = (currentTodayDate >= today);
+    title.textContent = currentTodayDate;
   }
 }
 
-// Keep legacy function names as aliases
-function updateTodayTitle() { updateHeaderNav(); }
-function updateTodayNextButton() { updateHeaderNav(); }
+function updateTodayNextButton() {
+  const nextBtn = document.getElementById('todayNextBtn');
+  const today = getTodayDate();
+  nextBtn.disabled = (currentTodayDate >= today);
+}
 
 // Week navigation state
 let weekType = 'week'; // 'weekend' or 'week'
 let weekOffset = 0; // -1 = last, 0 = this, 1 = next, etc.
+let selectedWeekDate = null; // Currently selected date in week view
 let chartColorMode = 'categories'; // 'categories', 'subcategories', or 'productivity' - shared between tabs
 let currentWeekDailyStats = []; // Store current week data for re-rendering
 
-function updateWeekNextButton() { updateHeaderNav(); }
+// Week navigation buttons
+document.getElementById('weekPrevBtn').addEventListener('click', () => {
+  weekOffset--;
+  loadWeekData();
+  updateWeekNextButton();
+});
+
+document.getElementById('weekNextBtn').addEventListener('click', () => {
+  if (weekOffset >= 0) return; // Don't go to future weeks
+  weekOffset++;
+  loadWeekData();
+  updateWeekNextButton();
+});
+
+function updateWeekNextButton() {
+  const nextBtn = document.getElementById('weekNextBtn');
+  nextBtn.disabled = (weekOffset >= 0);
+}
 
 // Load initial data
 (async () => {
   await loadWeekStartDay();
-  loadGreeting();
   updateTodayTitle();
   updateTodayNextButton();
   updateWeekNextButton();
+
+  // Load goals first so they're available for dashboard display
+  await loadGoalsData();
 
   // Load today data first (visible tab)
   await loadTabData('today');
@@ -2582,10 +3566,10 @@ async function displayUsageStats(stats, sessions, categoriesInfo, currentDate) {
         const diff = totalTime - yesterdayTimeAtSameTime;
         if (diff >= 0) {
           sameTimeValueEl.textContent = '+' + formatTime(diff);
-          sameTimeValueEl.className = 'stat-inline-value same-time-up';
+          sameTimeValueEl.className = 'stat-box-value same-time-up';
         } else {
           sameTimeValueEl.textContent = '-' + formatTime(Math.abs(diff));
-          sameTimeValueEl.className = 'stat-inline-value same-time-down';
+          sameTimeValueEl.className = 'stat-box-value same-time-down';
         }
       }
 
@@ -2641,8 +3625,7 @@ function displayProductivityComparison(elementId, current, previous) {
 
   const arrow = diff > 0 ? '↑' : '↓';
   el.textContent = `${arrow} ${Math.abs(diff)}%`;
-  // CSS class names are from time perspective: 'up'=red (more time=bad), 'down'=green (less time=good)
-  // For productivity: increase=good→green('down'), decrease=bad→red('up')
+  // For productivity, up is good (green), down is bad (red)
   el.className = `stat-box-compare ${diff > 0 ? 'down' : 'up'}`;
 }
 
@@ -2775,14 +3758,8 @@ async function getWeekDataForDate(targetDate) {
 }
 
 // Chart settings
-const CHART_WEEK_HEIGHT_DEFAULT = 207;
-const CHART_HOURLY_HEIGHT_DEFAULT = 100;
-// [MOCKUP] Heights are reduced in mockup mode for compact layout
-const CHART_WEEK_HEIGHT_MOCK = 158;
-const CHART_HOURLY_HEIGHT_MOCK = 76;
-
-function getChartWeekHeight() { return document.body.classList.contains('mockup-layout-active') ? CHART_WEEK_HEIGHT_MOCK : CHART_WEEK_HEIGHT_DEFAULT; }
-function getChartHourlyHeight() { return document.body.classList.contains('mockup-layout-active') ? CHART_HOURLY_HEIGHT_MOCK : CHART_HOURLY_HEIGHT_DEFAULT; }
+const CHART_WEEK_HEIGHT = 207;
+const CHART_HOURLY_HEIGHT = 100;
 
 /**
  * Setup canvas with proper pixel ratio for crisp text
@@ -2819,11 +3796,11 @@ function displayTodayWeekOverview(dailyStats, selectedDate, categoriesInfo = {})
   // Chart size
   const container = canvas.parentElement;
   const containerWidth = container.offsetWidth || 500;
-  const ctx = setupCanvas(canvas, containerWidth, getChartWeekHeight());
+  const ctx = setupCanvas(canvas, containerWidth, CHART_WEEK_HEIGHT);
 
   // Use CSS dimensions for calculations
   const canvasWidth = containerWidth;
-  const canvasHeight = getChartWeekHeight();
+  const canvasHeight = CHART_WEEK_HEIGHT;
   const todayDateForMax = getTodayDate();
 
   // Round max time up to nearest hour (exclude future dates)
@@ -3257,7 +4234,7 @@ function displayTodayHourlyBreakdown(sessions, stats = {}, date = null, categori
 
   // Set canvas size with proper scaling
   const containerWidth = canvas.parentElement.offsetWidth || 500;
-  const canvasHeight = getChartHourlyHeight();
+  const canvasHeight = CHART_HOURLY_HEIGHT;
   const ctx = setupCanvas(canvas, containerWidth, canvasHeight);
   const canvasWidth = containerWidth;
 
@@ -3790,11 +4767,6 @@ function displayTodayCategories(categories, categoriesInfo, totalTime, domains =
     filteredData = filteredData.slice(0, -1);
   }
 
-  // [MOCKUP] In mockup mode, cap at 5 items max — remove this block to remove mockup
-  if (mockupModeActive && filteredData.length > 5) {
-    filteredData = filteredData.slice(0, 5);
-  }
-
   // Find max time for relative bar sizing
   const maxCategoryTime = filteredData.length > 0 ? filteredData[0].time : 1;
 
@@ -3803,25 +4775,15 @@ function displayTodayCategories(categories, categoriesInfo, totalTime, domains =
 
   // Build category to top sites map (only for categories mode)
   const categoryTopSites = {};
-  const subcategoryTopSites = {};
   if (chartColorMode === 'categories') {
     Object.entries(domains).forEach(([domain, data]) => {
       const cat = data.category || 'other';
       if (!categoryTopSites[cat]) categoryTopSites[cat] = [];
       categoryTopSites[cat].push({ domain, time: data.time });
-
-      // Also build subcategory top sites map
-      const subcat = data.subcategory || 'general';
-      const subcatKey = `${cat}:${subcat}`;
-      if (!subcategoryTopSites[subcatKey]) subcategoryTopSites[subcatKey] = [];
-      subcategoryTopSites[subcatKey].push({ domain, time: data.time });
     });
-    // Sort each category's and subcategory's sites by time
+    // Sort each category's sites by time
     Object.keys(categoryTopSites).forEach(cat => {
       categoryTopSites[cat].sort((a, b) => b.time - a.time);
-    });
-    Object.keys(subcategoryTopSites).forEach(key => {
-      subcategoryTopSites[key].sort((a, b) => b.time - a.time);
     });
   }
 
@@ -3854,11 +4816,8 @@ function displayTodayCategories(categories, categoriesInfo, totalTime, domains =
             ${sortedSubcats.map(([subcat, subcatData]) => {
               const subcatPercentage = item.time > 0 ? Math.round((subcatData.time / item.time) * 100) : 0;
               const subcatName = getSubcategoryName(subcat);
-              const subcatKey = `${item.category}:${subcat}`;
-              const subcatSites = (subcategoryTopSites[subcatKey] || []).slice(0, 5);
-              const subcatSitesJson = JSON.stringify(subcatSites).replace(/"/g, '&quot;');
               return `
-                <div class="subcategory-item" data-subcategory="${subcat}" data-category="${item.category}" data-time="${subcatData.time}" data-topsites="${subcatSitesJson}">
+                <div class="subcategory-item">
                   <span class="subcategory-name">${subcatName}</span>
                   <span class="subcategory-time">${subcatPercentage}% · ${formatDecimalHours(subcatData.time)}</span>
                 </div>
@@ -3906,102 +4865,49 @@ function setupCategoryHoverEvents(container, categoriesInfo, tooltipId = 'catego
   const tooltip = document.getElementById(tooltipId);
   if (!tooltip) return;
 
-  // Helper: build tooltip HTML for sites list
-  function buildSitesHTML(topSites) {
-    if (topSites.length === 0) return '';
-    let html = `<div class="graph-tooltip-divider"></div>`;
-    html += `<div class="graph-tooltip-sites-title">Top Sites</div>`;
-    html += `<div class="graph-tooltip-sites">`;
-    topSites.forEach(site => {
-      html += `
-        <div class="graph-tooltip-site">
-          <span class="graph-tooltip-site-name">${site.domain}</span>
-          <span class="graph-tooltip-site-time">${formatTime(site.time)}</span>
-        </div>
-      `;
-    });
-    html += `</div>`;
-    return html;
-  }
-
-  // Helper: position and show tooltip next to an element
-  function showTooltipAt(html, anchorEl) {
-    tooltip.innerHTML = html;
-    tooltip.classList.add('visible');
-    const rect = anchorEl.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    tooltip.style.left = `${rect.right - containerRect.left + 10}px`;
-    tooltip.style.top = `${rect.top - containerRect.top}px`;
-  }
-
   container.querySelectorAll('.category-item-compact').forEach(item => {
-    // Show category tooltip when entering the category item
     item.addEventListener('mouseenter', (e) => {
-      // If entering directly onto a subcategory item, skip (subcategory handler will fire)
-      if (e.target.closest && e.target.closest('.subcategory-item')) return;
-
       const category = item.dataset.category;
       const color = item.dataset.color;
       const time = parseInt(item.dataset.time) || 0;
       const info = categoriesInfo[category] || { name: category };
       let topSites = [];
-      try { topSites = JSON.parse(item.dataset.topsites || '[]'); } catch (err) {}
+      try {
+        topSites = JSON.parse(item.dataset.topsites || '[]');
+      } catch (err) {}
 
-      showTooltipAt(`
+      let html = `
         <div class="graph-tooltip-header" style="color:${color}">${info.name}</div>
         <div class="graph-tooltip-time">${formatTime(time)}</div>
-        ${buildSitesHTML(topSites)}
-      `, item);
+      `;
+
+      if (topSites.length > 0) {
+        html += `<div class="graph-tooltip-divider"></div>`;
+        html += `<div class="graph-tooltip-sites-title">Top Sites</div>`;
+        html += `<div class="graph-tooltip-sites">`;
+        topSites.forEach(site => {
+          html += `
+            <div class="graph-tooltip-site">
+              <span class="graph-tooltip-site-name">${site.domain}</span>
+              <span class="graph-tooltip-site-time">${formatTime(site.time)}</span>
+            </div>
+          `;
+        });
+        html += `</div>`;
+      }
+
+      tooltip.innerHTML = html;
+      tooltip.classList.add('visible');
+
+      // Position tooltip
+      const rect = item.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      tooltip.style.left = `${rect.right - containerRect.left + 10}px`;
+      tooltip.style.top = `${rect.top - containerRect.top}px`;
     });
 
-    // Hide tooltip when leaving the category item entirely
     item.addEventListener('mouseleave', () => {
       tooltip.classList.remove('visible');
-    });
-
-    // Subcategory items: override tooltip on enter, restore category tooltip on leave
-    item.querySelectorAll('.subcategory-item').forEach(subcatItem => {
-      subcatItem.addEventListener('mouseenter', (e) => {
-        e.stopPropagation();
-        const category = subcatItem.dataset.category;
-        const subcategory = subcatItem.dataset.subcategory;
-        const time = parseInt(subcatItem.dataset.time) || 0;
-        const info = categoriesInfo[category] || { name: category };
-        const subcatName = getSubcategoryName(subcategory);
-        const color = item.dataset.color || info.color || '#8E8E93';
-        let topSites = [];
-        try { topSites = JSON.parse(subcatItem.dataset.topsites || '[]'); } catch (err) {}
-
-        showTooltipAt(`
-          <div class="graph-tooltip-header" style="color:${color}">${info.name} - ${subcatName}</div>
-          <div class="graph-tooltip-time">${formatTime(time)}</div>
-          ${buildSitesHTML(topSites)}
-        `, subcatItem);
-      });
-
-      subcatItem.addEventListener('mouseleave', (e) => {
-        // If still within the category item, restore category tooltip
-        const relatedTarget = e.relatedTarget;
-        if (relatedTarget && relatedTarget.closest && relatedTarget.closest('.category-item-compact') === item) {
-          // Moving to another subcategory — let its mouseenter handle it
-          if (relatedTarget.closest('.subcategory-item')) return;
-
-          // Restore category tooltip
-          const category = item.dataset.category;
-          const color = item.dataset.color;
-          const time = parseInt(item.dataset.time) || 0;
-          const info = categoriesInfo[category] || { name: category };
-          let topSites = [];
-          try { topSites = JSON.parse(item.dataset.topsites || '[]'); } catch (err) {}
-
-          showTooltipAt(`
-            <div class="graph-tooltip-header" style="color:${color}">${info.name}</div>
-            <div class="graph-tooltip-time">${formatTime(time)}</div>
-            ${buildSitesHTML(topSites)}
-          `, item);
-        }
-        // If leaving category item entirely, item's mouseleave handles hiding
-      });
     });
   });
 }
@@ -4038,7 +4944,6 @@ function setupCategoryClickEvents(container) {
  */
 async function displayTodayMostUsed(sessions, stats, categoriesInfo, totalDayTime, todayCategories = {}) {
   const container = document.getElementById('todayMostUsed');
-  container.sessions = sessions;
 
   // Calculate top3 categories based on today's totals for consistent colors
   const top3Colors = ['#8BAF5B', '#40E0D0', '#FF9500'];
@@ -4077,7 +4982,6 @@ async function displayTodayMostUsed(sessions, stats, categoriesInfo, totalDayTim
         const subcategory = session.subcategory || 'general';
 
         // Choose key based on chartColorMode
-        // In categories mode, use domain:category to show same domain in different categories separately
         let key;
         if (chartColorMode === 'subcategories') {
           key = `${domain}:${subcategory}`;
@@ -4086,7 +4990,7 @@ async function displayTodayMostUsed(sessions, stats, categoriesInfo, totalDayTim
           const prodName = prodGroup === 0 ? 'Productive' : (prodGroup === 2 ? 'Unproductive' : 'Neutral');
           key = `${prodName}:${domain}`;
         } else {
-          key = `${domain}:${effectiveCategory}`;
+          key = domain;
         }
 
         if (!domainTimes[key]) {
@@ -4137,7 +5041,7 @@ async function displayTodayMostUsed(sessions, stats, categoriesInfo, totalDayTim
             const prodName = prodGroup === 0 ? 'Productive' : (prodGroup === 2 ? 'Unproductive' : 'Neutral');
             key = `${prodName}:${domain}`;
           } else {
-            key = `${domain}:${effectiveCategory}`;
+            key = domain;
           }
 
           if (!domainTimes[key]) {
@@ -4176,7 +5080,7 @@ async function displayTodayMostUsed(sessions, stats, categoriesInfo, totalDayTim
         const prodName = prodGroup === 0 ? 'Productive' : (prodGroup === 2 ? 'Unproductive' : 'Neutral');
         key = `${prodName}:${domain}`;
       } else {
-        key = `${domain}:${data.category}`;
+        key = domain;
       }
 
       if (!domainTimes[key]) {
@@ -4228,6 +5132,7 @@ async function displayTodayMostUsed(sessions, stats, categoriesInfo, totalDayTim
 
   // Store data for expansion
   container.allSites = allSites;
+  container.sessions = sessions; // Store sessions for visit detail expansion
   // Only set visibleCount if not already set (preserve user's "Show More" clicks)
   if (!container.visibleCount) {
     container.visibleCount = 10;
@@ -4258,27 +5163,26 @@ function renderMostUsedItems(container, containerId = 'today') {
     const primaryUrl = `https://icons.duckduckgo.com/ip3/${faviconDomain}.ico`;
     const fallbackUrl = `https://www.google.com/s2/favicons?domain=${faviconDomain}&sz=64`;
 
-    const pct = Math.round((site.time / totalTime) * 100);
-    // [MOCKUP] Show percentage in mockup mode — remove ternary to remove mockup
-    const timeDisplay = mockupModeActive
-      ? `${formatTime(site.time)} (${pct}%)`
-      : formatTimeWithSeconds(site.time);
     return `
-      <div class="most-used-item-new" data-site-index="${index}" data-container-id="${containerId}">
-        <img class="most-used-favicon" src="${primaryUrl}" alt="" onerror="this.onerror=null; this.src='${fallbackUrl}'">
-        <div class="most-used-content">
-          <div class="most-used-header">
-            <span class="most-used-name">${site.name}</span>
-            <span class="most-used-divider">|</span>
-            <span class="most-used-category">${site.categoryName}</span>
-          </div>
-          <div class="most-used-bar-container">
-            <div class="most-used-bar-track">
-              <div class="most-used-bar" style="width: ${barWidth}%; background-color: ${site.color};"></div>
+      <div class="most-used-item-wrapper" data-site-index="${index}" data-container-id="${containerId}">
+        <div class="most-used-item-new">
+          <img class="most-used-favicon" src="${primaryUrl}" alt="" onerror="this.onerror=null; this.src='${fallbackUrl}'">
+          <div class="most-used-content">
+            <div class="most-used-header">
+              <span class="most-used-name">${site.name}</span>
+              <span class="most-used-divider">|</span>
+              <span class="most-used-category">${site.categoryName}</span>
+              <span class="most-used-expand-icon">▶</span>
             </div>
-            <span class="most-used-time">${timeDisplay}</span>
+            <div class="most-used-bar-container">
+              <div class="most-used-bar-track">
+                <div class="most-used-bar" style="width: ${barWidth}%; background-color: ${site.color};"></div>
+              </div>
+              <span class="most-used-time">${formatTimeWithSeconds(site.time)}</span>
+            </div>
           </div>
         </div>
+        <div class="most-used-visits-detail"></div>
       </div>
     `;
   }).join('');
@@ -4290,33 +5194,45 @@ function renderMostUsedItems(container, containerId = 'today') {
 
   container.innerHTML = html;
 
-  // Add click handlers for most-used items - open detail modal with visit history
-  container.querySelectorAll('.most-used-item-new').forEach(item => {
-    item.addEventListener('click', async () => {
-      const index = parseInt(item.dataset.siteIndex);
+  // Add click handlers for most-used items - toggle inline visit details
+  container.querySelectorAll('.most-used-item-wrapper').forEach(wrapper => {
+    const itemEl = wrapper.querySelector('.most-used-item-new');
+    itemEl.addEventListener('click', async () => {
+      const index = parseInt(wrapper.dataset.siteIndex);
       const site = allSites[index];
       if (!site) return;
 
-      await showDetailModal(site, categoriesInfo);
+      const detailEl = wrapper.querySelector('.most-used-visits-detail');
+      const expandIcon = wrapper.querySelector('.most-used-expand-icon');
+      const isExpanded = wrapper.classList.contains('expanded');
 
-      // Load and display visit history in modal
-      const visitsSection = document.getElementById('detailModalVisitsSection');
-      const visitsList = document.getElementById('detailModalVisitsList');
-      visitsSection.style.display = 'block';
-      visitsList.innerHTML = '<div class="visit-detail-empty">Loading...</div>';
-
-      let sessions = container.sessions || [];
-      if (sessions.length === 0) {
-        visitsList.innerHTML = '<div class="visit-detail-empty">Loading...</div>';
-        if (containerId === 'week') {
-          sessions = await loadWeekSessions();
-        } else {
-          const resp = await chrome.runtime.sendMessage({ type: 'GET_TODAY_STATS' });
-          sessions = resp?.data?.sessions || [];
+      // Collapse all other expanded items
+      container.querySelectorAll('.most-used-item-wrapper.expanded').forEach(other => {
+        if (other !== wrapper) {
+          other.classList.remove('expanded');
+          other.querySelector('.most-used-visits-detail').innerHTML = '';
+          const otherIcon = other.querySelector('.most-used-expand-icon');
+          if (otherIcon) otherIcon.textContent = '▶';
         }
-        container.sessions = sessions;
+      });
+
+      if (isExpanded) {
+        wrapper.classList.remove('expanded');
+        detailEl.innerHTML = '';
+        if (expandIcon) expandIcon.textContent = '▶';
+      } else {
+        wrapper.classList.add('expanded');
+        if (expandIcon) expandIcon.textContent = '▼';
+
+        // If sessions not available on container, load them dynamically (week view)
+        let sessions = container.sessions || [];
+        if (sessions.length === 0 && containerId === 'week') {
+          detailEl.innerHTML = '<div class="visit-detail-empty">Loading...</div>';
+          sessions = await loadWeekSessions();
+          container.sessions = sessions;
+        }
+        detailEl.innerHTML = buildVisitDetailHTML(site.domain || site.name, sessions);
       }
-      visitsList.innerHTML = buildVisitDetailHTML(site.domain || site.name, sessions, site.category);
     });
   });
 
@@ -4332,13 +5248,17 @@ function renderMostUsedItems(container, containerId = 'today') {
 
 /**
  * Load sessions for all dates in the current week view
+ * @returns {Array} Combined sessions from all dates
  */
 async function loadWeekSessions() {
   try {
     const dateRange = getDateRange();
     const allSessions = [];
     await Promise.all(dateRange.dates.map(async date => {
-      const response = await chrome.runtime.sendMessage({ type: 'GET_DATE_STATS', date });
+      const response = await chrome.runtime.sendMessage({
+        type: 'GET_DATE_STATS',
+        date
+      });
       const sessions = response?.data?.sessions || [];
       allSessions.push(...sessions);
     }));
@@ -4351,12 +5271,16 @@ async function loadWeekSessions() {
 
 /**
  * Build HTML for visit details of a specific domain from sessions
+ * @param {string} domain - The domain to filter visits for
+ * @param {Array} sessions - Array of session objects
+ * @returns {string} HTML string
  */
-function buildVisitDetailHTML(domain, sessions, category) {
+function buildVisitDetailHTML(domain, sessions) {
+  // Collect all visits for this domain across sessions
   const visits = [];
+
   sessions.forEach(session => {
     if (!session.visits) return;
-    if (category && session.category !== category) return;
     session.visits.forEach(visit => {
       try {
         const url = new URL(visit.url);
@@ -4370,25 +5294,14 @@ function buildVisitDetailHTML(domain, sessions, category) {
             sessionCategory: session.category
           });
         }
-      } catch (e) {}
+      } catch (e) {
+        // Skip invalid URLs
+      }
     });
   });
 
+  // Sort by timestamp descending (most recent first)
   visits.sort((a, b) => b.timestamp - a.timestamp);
-
-  // Merge consecutive visits to the same URL
-  const merged = [];
-  for (const v of visits) {
-    const prev = merged[merged.length - 1];
-    if (prev && prev.url === v.url) {
-      prev.duration += v.duration;
-      if (v.timestamp < prev.timestamp) prev.timestamp = v.timestamp;
-    } else {
-      merged.push({ ...v });
-    }
-  }
-  visits.length = 0;
-  visits.push(...merged);
 
   if (visits.length === 0) {
     return '<div class="visit-detail-empty">No visit records available</div>';
@@ -4397,10 +5310,12 @@ function buildVisitDetailHTML(domain, sessions, category) {
   const visitItems = visits.map(v => {
     const time = new Date(v.timestamp);
     const dateStr = time.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
-    const timeStr = time.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = time.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const displayTime = `${dateStr} ${timeStr}`;
-    const durationStr = formatTime(v.duration);
+    const durationStr = formatTimeWithSeconds(v.duration);
+    // Truncate title if too long
     const title = v.title.length > 60 ? v.title.substring(0, 57) + '...' : v.title;
+    // Get path from URL for display
     let path = '';
     try {
       const urlObj = new URL(v.url);
@@ -4429,6 +5344,9 @@ function buildVisitDetailHTML(domain, sessions, category) {
   `;
 }
 
+/**
+ * Escape HTML special characters
+ */
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -4444,8 +5362,8 @@ async function loadWeekData() {
     const dateRange = getDateRange();
 
     // Update title
-    // Update header navigator with week title
-    updateHeaderNav();
+    const weekTitle = document.getElementById('weekTitle');
+    weekTitle.textContent = dateRange.title;
 
     // Get stats for each day in the range
     const dailyStats = await Promise.all(
@@ -4471,7 +5389,7 @@ async function loadWeekData() {
     const categoriesResponse = await chrome.runtime.sendMessage({ type: 'GET_CATEGORIES' });
     const categoriesInfo = categoriesResponse.data;
 
-    displayWeekChart(weeklyStats.dailyStats, null, categoriesInfo);
+    displayWeekChart(weeklyStats.dailyStats, selectedWeekDate, categoriesInfo);
     displayWeekStats(weeklyStats);
 
     // Calculate and display productivity score for the week with last week comparison
@@ -4870,11 +5788,11 @@ function displayWeekChart(dailyStats, selectedDate = null, categoriesInfo = {}) 
   // Chart size
   const container = canvas.parentElement;
   const containerWidth = container.offsetWidth || 500;
-  const ctx = setupCanvas(canvas, containerWidth, getChartWeekHeight());
+  const ctx = setupCanvas(canvas, containerWidth, CHART_WEEK_HEIGHT);
 
   // Use CSS dimensions for calculations
   const canvasWidth = containerWidth;
-  const canvasHeight = getChartWeekHeight();
+  const canvasHeight = CHART_WEEK_HEIGHT;
   const todayDateForMax = getTodayDate();
 
   // Round max time up to nearest hour (exclude future dates)
@@ -5210,8 +6128,7 @@ function displayWeekChart(dailyStats, selectedDate = null, categoriesInfo = {}) 
       document.querySelector('[data-tab="today"]').classList.add('active');
       document.getElementById('today').classList.add('active');
 
-      // Update header to day mode and load data
-      updateHeaderNav();
+      // Load data for that date
       loadTodayData(clickedBar.date);
     }
   };
@@ -5448,8 +6365,6 @@ document.addEventListener('keydown', (e) => {
 
 function hideDetailModal() {
   detailModalOverlay.classList.remove('active');
-  const visitsSection = document.getElementById('detailModalVisitsSection');
-  if (visitsSection) visitsSection.style.display = 'none';
 }
 
 /**
@@ -5645,7 +6560,7 @@ const limitTimeSection = document.getElementById('limitTimeSection');
 const limitSelectedTarget = document.getElementById('limitSelectedTarget');
 const limitSaveBtn = document.getElementById('limitSaveBtn');
 
-// Current selection state: { targetType, category?, targetValue? }
+// Current selection state: { type: 'category' | 'domains', category: string, domains?: string[] }
 let currentLimitSelection = null;
 let editingLimitCategory = null; // Track if we're editing an existing limit
 
@@ -5666,11 +6581,36 @@ addLimitModal?.addEventListener('click', (e) => {
   }
 });
 
-function buildLimitId(category, targetType, targetValue) {
-  if (targetType === 'group') return `grp:${targetValue}`;
-  if (targetType === 'subcategory') return `sub:${category}:${targetValue}`;
-  if (targetType === 'domain') return `dom:${category}:${targetValue}`;
-  return `cat:${category}`;
+/**
+ * Generate a unique limit ID based on selection
+ * - Domain-specific: "site:domain.com" or "sites:domain1,domain2"
+ * - Category-specific: "category" or "cats:cat1,cat2"
+ * - Mixed: "mixed:cat1,cat2:domain1,domain2"
+ */
+function generateLimitId(categories, domains) {
+  // If only domains (no categories), use site: prefix
+  if ((!categories || categories.length === 0) && domains && domains.length > 0) {
+    if (domains.length === 1) {
+      return `site:${domains[0]}`;
+    }
+    return `sites:${domains.sort().join(',')}`;
+  }
+  
+  // If only categories (no domains), use category name or cats: prefix
+  if ((!domains || domains.length === 0) && categories && categories.length > 0) {
+    if (categories.length === 1) {
+      return categories[0];
+    }
+    return `cats:${categories.sort().join(',')}`;
+  }
+  
+  // If both categories and domains, use mixed: prefix
+  if (categories && categories.length > 0 && domains && domains.length > 0) {
+    return `mixed:${categories.sort().join(',')}:${domains.sort().join(',')}`;
+  }
+  
+  // Fallback
+  return 'other';
 }
 
 // Save button - save the limit
@@ -5687,14 +6627,29 @@ limitSaveBtn?.addEventListener('click', async () => {
   }
 
   try {
-    const { targetType, category, targetValue } = currentLimitSelection;
-    const id = editingLimitCategory || buildLimitId(category, targetType, targetValue);
+    // Handle mixed selection type
+    let includeSites = [];
+    let includeCategories = [];
 
+    if (currentLimitSelection.type === 'mixed') {
+      includeCategories = currentLimitSelection.categories || [];
+      includeSites = currentLimitSelection.domains || [];
+    } else if (currentLimitSelection.type === 'domains') {
+      includeSites = currentLimitSelection.domains || [];
+    } else if (currentLimitSelection.type === 'category') {
+      includeCategories = [currentLimitSelection.category];
+    }
+    
+    // Generate unique limit ID
+    let category = editingLimitCategory || generateLimitId(includeCategories, includeSites);
+
+    // Preserve enabled state when editing
     let enabled = true;
     if (editingLimitCategory && categoryLimits[editingLimitCategory]) {
       enabled = categoryLimits[editingLimitCategory].enabled;
     }
 
+    // Get blocking options
     const blockEnabled = document.getElementById('limitBlockEnabled')?.checked ?? true;
     const alertEnabled = document.getElementById('limitAlertEnabled')?.checked ?? true;
 
@@ -5703,20 +6658,18 @@ limitSaveBtn?.addEventListener('click', async () => {
       enabled,
       alertMinutesBefore: alertEnabled ? 5 : 0,
       blockWhenLimitReached: blockEnabled,
-      targetType,
-      targetValue: targetValue || null
+      includeSites,
+      includeCategories,
+      excludeSites: []
     };
 
     await chrome.runtime.sendMessage({
       type: 'SET_LIMIT',
-      category: category || targetValue,
+      category,
       limit
     });
 
-    categoryLimits[id] = limit;
-    if (editingLimitCategory && editingLimitCategory !== id) {
-      delete categoryLimits[editingLimitCategory];
-    }
+    categoryLimits[category] = limit;
     renderActiveLimits();
     closeAddLimitModal();
   } catch (error) {
@@ -5806,63 +6759,74 @@ document.getElementById('limitTimeIncrease')?.addEventListener('click', () => {
   setLimitTime(Math.floor(totalMinutes / 60), totalMinutes % 60);
 });
 
-function openEditLimitModal(limitId) {
-  const limit = categoryLimits[limitId];
+function openEditLimitModal(category) {
+  const limit = categoryLimits[category];
   if (!limit) return;
 
-  editingLimitCategory = limitId;
+  editingLimitCategory = category;
 
+  // Calculate hours and minutes from dailyLimit
   const hours = Math.floor(limit.dailyLimit / 3600000);
   const minutes = Math.floor((limit.dailyLimit % 3600000) / 60000);
+
+  // Set time inputs with new UI
   setLimitTime(hours, minutes);
 
+  // Update modal title
   const modalTitle = addLimitModal?.querySelector('.modal-header h3');
   if (modalTitle) modalTitle.textContent = 'Edit Usage Limit';
 
+  // Populate selection list first (like adding new limit)
   populateLimitSelectionList();
 
-  // Pre-select the matching item based on targetType
-  const targetType = limit.targetType || 'category';
-  const targetValue = limit.targetValue || null;
-  const category = limit.category || null;
-
-  let selector = '';
-  if (targetType === 'group') {
-    selector = `.limit-selectable-item[data-target-type="group"][data-target-value="${targetValue}"]`;
-  } else if (targetType === 'subcategory') {
-    selector = `.limit-selectable-item[data-target-type="subcategory"][data-category="${category}"][data-target-value="${targetValue}"]`;
-  } else if (targetType === 'domain') {
-    selector = `.limit-selectable-item[data-target-type="domain"][data-category="${category}"][data-target-value="${targetValue}"]`;
-  } else {
-    const catFromId = limitId.startsWith('cat:') ? limitId.slice(4) : (category || limitId);
-    selector = `.limit-selectable-item[data-target-type="category"][data-category="${catFromId}"]`;
+  // Pre-select the category
+  const categoryCheckbox = limitSelectionList?.querySelector(`.limit-category-checkbox[data-category="${category}"]`);
+  if (categoryCheckbox) {
+    categoryCheckbox.classList.add('checked');
   }
 
-  const selectedItem = limitSelectionList?.querySelector(selector);
-  if (selectedItem) {
-    selectedItem.classList.add('selected');
-    // Expand parent group if it's a sub-item
-    const parentSubList = selectedItem.closest('.limit-sub-list');
-    if (parentSubList) {
-      parentSubList.classList.add('expanded');
-      const expandBtn = limitSelectionList?.querySelector(`.limit-expand-btn[data-category="${parentSubList.dataset.category}"]`);
-      if (expandBtn) expandBtn.classList.add('expanded');
+  // Pre-select included domains if any
+  const includedDomains = limit.includeSites || [];
+  includedDomains.forEach(domain => {
+    const domainCheckbox = limitSelectionList?.querySelector(`.limit-domain-checkbox[data-domain="${domain}"]`);
+    if (domainCheckbox) {
+      domainCheckbox.classList.add('checked');
+      // Expand the category's domain list
+      const domainList = domainCheckbox.closest('.limit-domain-list');
+      if (domainList) {
+        domainList.classList.add('expanded');
+        const expandBtn = domainList.previousElementSibling?.querySelector('.limit-expand-btn');
+        if (expandBtn) expandBtn.classList.add('expanded');
+      }
     }
-    currentLimitSelection = {
-      targetType,
-      category: selectedItem.dataset.category || null,
-      targetValue: selectedItem.dataset.targetValue || null
-    };
-    limitTimeSection?.classList.remove('hidden');
-    if (limitSaveBtn) limitSaveBtn.disabled = false;
-    updateLimitSelectedTarget();
-  }
+  });
 
+  // Pre-select included categories if any
+  const includedCategories = limit.includeCategories || [];
+  includedCategories.forEach(cat => {
+    if (cat !== category) {
+      const catCheckbox = limitSelectionList?.querySelector(`.limit-category-checkbox[data-category="${cat}"]`);
+      if (catCheckbox) {
+        catCheckbox.classList.add('checked');
+      }
+    }
+  });
+
+  // Set blocking options from existing limit
   const blockEnabledCheckbox = document.getElementById('limitBlockEnabled');
   const alertEnabledCheckbox = document.getElementById('limitAlertEnabled');
-  if (blockEnabledCheckbox) blockEnabledCheckbox.checked = limit.blockWhenLimitReached !== false;
-  if (alertEnabledCheckbox) alertEnabledCheckbox.checked = (limit.alertMinutesBefore || 0) > 0;
+  if (blockEnabledCheckbox) {
+    blockEnabledCheckbox.checked = limit.blockWhenLimitReached !== false;
+  }
+  if (alertEnabledCheckbox) {
+    alertEnabledCheckbox.checked = (limit.alertMinutesBefore || 0) > 0;
+  }
 
+  // Update selection state and counts
+  updateSelectionCounts();
+  updateLimitSelection();
+
+  // Show modal
   addLimitModal.classList.add('active');
 }
 
@@ -5875,153 +6839,191 @@ function closeAddLimitModal() {
 function populateLimitSelectionList() {
   if (!limitSelectionList) return;
 
-  let html = '';
+  const categoryList = Object.entries(categoriesInfo)
+    .filter(([key]) => key !== 'other' && key !== 'undefined')
+    .sort((a, b) => a[1].name.localeCompare(b[1].name));
 
-  // Render each productivity group as a collapsible tree
-  Object.entries(PRODUCTIVITY_GROUPS).forEach(([groupKey, group]) => {
-    const groupCategories = group.categories.filter(c => categoriesInfo[c]);
+  limitSelectionList.innerHTML = categoryList.map(([key, info]) => {
+    // Get domains for this category
+    const domains = categoryDomainUsage[key] || {};
+    const sortedDomains = Object.entries(domains)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    const hasDomains = sortedDomains.length > 0;
 
-    html += `
-      <div class="limit-group-section" data-group="${groupKey}">
-        <div class="limit-selectable-item limit-group-header" data-target-type="group" data-target-value="${groupKey}">
-          <span class="limit-item-icon" style="color:${group.color}">${group.icon || '●'}</span>
-          <span class="limit-item-name">All ${group.name}</span>
-          <span class="limit-group-count">${groupCategories.length} categories</span>
-          <button class="limit-expand-btn expanded" data-group="${groupKey}">▶</button>
+    return `
+      <div class="limit-category-item" data-category="${key}">
+        <div class="limit-category-row">
+          <div class="custom-checkbox limit-category-checkbox" data-category="${key}"></div>
+          <span class="limit-category-icon">${info.icon}</span>
+          <span class="limit-category-name">${info.name}</span>
+          ${hasDomains ? `
+            <span class="selection-count" data-category="${key}"></span>
+            <button class="limit-expand-btn" data-category="${key}">▶</button>
+          ` : ''}
         </div>
-        <div class="limit-group-children expanded" data-group="${groupKey}">
-    `;
-
-    groupCategories.forEach(catKey => {
-      const info = categoriesInfo[catKey] || { icon: '📱', name: catKey };
-      const subcats = SUBCATEGORIES[catKey] || {};
-      const subcatEntries = Object.entries(subcats).filter(([k]) => k !== 'general');
-      const hasChildren = subcatEntries.length > 0;
-
-      // Get domains for this category
-      const domains = categoryDomainUsage[catKey] || {};
-      const topDomains = Object.entries(domains).sort((a, b) => b[1] - a[1]).slice(0, 6);
-
-      html += `
-          <div class="limit-category-block" data-category="${catKey}">
-            <div class="limit-selectable-item limit-cat-row" data-target-type="category" data-category="${catKey}">
-              <span class="limit-item-icon">${info.icon}</span>
-              <span class="limit-item-name">${info.name}</span>
-              ${hasChildren || topDomains.length > 0 ? `<button class="limit-expand-btn" data-category="${catKey}">▶</button>` : ''}
-            </div>
-      `;
-
-      if (hasChildren || topDomains.length > 0) {
-        html += `<div class="limit-children" data-category="${catKey}">`;
-
-        // Subcategories
-        subcatEntries.forEach(([subKey, subDesc]) => {
-          html += `
-              <div class="limit-selectable-item limit-child-row" data-target-type="subcategory" data-category="${catKey}" data-target-value="${subKey}">
-                <span class="limit-child-icon">›</span>
-                <span class="limit-item-name">${getSubcategoryName(subKey)}</span>
-                <span class="limit-child-desc">${subDesc}</span>
-              </div>
-          `;
-        });
-
-        // Domains
-        if (topDomains.length > 0) {
-          html += `<div class="limit-domain-divider">Specific domains</div>`;
-          topDomains.forEach(([domain, time]) => {
-            html += `
-              <div class="limit-selectable-item limit-child-row limit-domain-row" data-target-type="domain" data-category="${catKey}" data-target-value="${domain}">
-                <img class="limit-domain-favicon" src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" alt="" onerror="this.style.display='none'">
-                <span class="limit-item-name">${domain}</span>
+        ${hasDomains ? `
+          <div class="limit-domain-list" data-category="${key}">
+            ${sortedDomains.map(([domain, time]) => `
+              <div class="limit-domain-item" data-domain="${domain}" data-category="${key}">
+                <div class="custom-checkbox custom-checkbox-sm limit-domain-checkbox" data-category="${key}" data-domain="${domain}"></div>
+                <img class="limit-domain-favicon" src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" alt="">
+                <span class="limit-domain-name">${domain}</span>
                 <span class="limit-domain-time">${formatTime(time)}</span>
               </div>
-            `;
-          });
-        }
-
-        html += `</div>`;
-      }
-
-      html += `</div>`;
-    });
-
-    html += `
-        </div>
+            `).join('')}
+          </div>
+        ` : ''}
       </div>
     `;
-  });
+  }).join('');
 
-  limitSelectionList.innerHTML = html;
+  // Setup event listeners
   setupLimitSelectionListeners();
 }
 
 function setupLimitSelectionListeners() {
-  // Single-select: click any selectable item
-  limitSelectionList.querySelectorAll('.limit-selectable-item').forEach(item => {
+  // Category checkbox - can be combined with domain selections
+  limitSelectionList.querySelectorAll('.limit-category-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isChecked = checkbox.classList.contains('checked');
+
+      // Toggle this category
+      if (isChecked) {
+        checkbox.classList.remove('checked');
+      } else {
+        checkbox.classList.add('checked');
+      }
+
+      updateSelectionCounts();
+      updateLimitSelection();
+    });
+  });
+
+  // Domain checkbox - allows multiple selection across categories
+  limitSelectionList.querySelectorAll('.limit-domain-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isChecked = checkbox.classList.contains('checked');
+
+      // Toggle this domain
+      if (isChecked) {
+        checkbox.classList.remove('checked');
+      } else {
+        checkbox.classList.add('checked');
+      }
+
+      updateSelectionCounts();
+      updateLimitSelection();
+    });
+  });
+
+  // Make domain item row clickable
+  limitSelectionList.querySelectorAll('.limit-domain-item').forEach(item => {
     item.addEventListener('click', (e) => {
-      if (e.target.closest('.limit-expand-btn')) return;
-      const targetType = item.dataset.targetType;
-      if (!targetType) return;
-
-      // Deselect all
-      limitSelectionList.querySelectorAll('.limit-selectable-item').forEach(el => el.classList.remove('selected'));
-      item.classList.add('selected');
-
-      currentLimitSelection = {
-        targetType,
-        category: item.dataset.category || null,
-        targetValue: item.dataset.targetValue || null
-      };
-
-      limitTimeSection?.classList.remove('hidden');
-      if (limitSaveBtn) limitSaveBtn.disabled = false;
-      updateLimitSelectedTarget();
+      if (e.target.classList.contains('custom-checkbox')) return;
+      const checkbox = item.querySelector('.limit-domain-checkbox');
+      if (checkbox) checkbox.click();
     });
   });
 
-  // Expand/collapse for category children
-  limitSelectionList.querySelectorAll('.limit-expand-btn[data-category]').forEach(btn => {
+  // Expand button
+  limitSelectionList.querySelectorAll('.limit-expand-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const cat = btn.dataset.category;
-      const children = limitSelectionList.querySelector(`.limit-children[data-category="${cat}"]`);
-      if (!children) return;
-      const isExpanded = children.classList.contains('expanded');
-      children.classList.toggle('expanded', !isExpanded);
-      btn.classList.toggle('expanded', !isExpanded);
-    });
-  });
+      const category = e.target.dataset.category;
+      const domainList = limitSelectionList.querySelector(`.limit-domain-list[data-category="${category}"]`);
+      const isExpanded = domainList?.classList.contains('expanded');
 
-  // Expand/collapse for group children
-  limitSelectionList.querySelectorAll('.limit-expand-btn[data-group]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const group = btn.dataset.group;
-      const children = limitSelectionList.querySelector(`.limit-group-children[data-group="${group}"]`);
-      if (!children) return;
-      const isExpanded = children.classList.contains('expanded');
-      children.classList.toggle('expanded', !isExpanded);
-      btn.classList.toggle('expanded', !isExpanded);
+      // Close all other domain lists
+      limitSelectionList.querySelectorAll('.limit-domain-list').forEach(dl => dl.classList.remove('expanded'));
+      limitSelectionList.querySelectorAll('.limit-expand-btn').forEach(b => b.classList.remove('expanded'));
+
+      if (!isExpanded && domainList) {
+        domainList.classList.add('expanded');
+        e.target.classList.add('expanded');
+      }
     });
   });
 }
 
-function updateLimitSelectedTarget() {
-  if (!currentLimitSelection || !limitSelectedTarget) return;
-  const { targetType, category, targetValue } = currentLimitSelection;
-  let displayText = '';
+function updateLimitSelection() {
+  // Gather all checked categories
+  const checkedCategories = [];
+  limitSelectionList.querySelectorAll('.limit-category-checkbox.checked').forEach(cb => {
+    checkedCategories.push(cb.dataset.category);
+  });
 
-  if (targetType === 'group') {
-    const group = PRODUCTIVITY_GROUPS[targetValue];
-    displayText = `All ${group?.name || targetValue}`;
-  } else if (targetType === 'category') {
-    const info = categoriesInfo[category] || { icon: '📱', name: category };
-    displayText = `${info.icon} ${info.name}`;
-  } else if (targetType === 'subcategory') {
-    const info = categoriesInfo[category] || { icon: '📱', name: category };
-    displayText = `${info.icon} ${info.name} › ${getSubcategoryName(targetValue)}`;
-  } else if (targetType === 'domain') {
-    displayText = targetValue;
+  // Gather all checked domains
+  const checkedDomains = [];
+  limitSelectionList.querySelectorAll('.limit-domain-checkbox.checked').forEach(cb => {
+    checkedDomains.push(cb.dataset.domain);
+  });
+
+  if (checkedCategories.length === 0 && checkedDomains.length === 0) {
+    resetLimitSelection();
+    return;
+  }
+
+  // Build selection object
+  const selection = {
+    type: 'mixed',
+    categories: checkedCategories,
+    domains: checkedDomains
+  };
+
+  setLimitSelection(selection);
+}
+
+function updateSelectionCounts() {
+  // Update count for each category
+  const categories = limitSelectionList.querySelectorAll('.limit-category-item');
+  categories.forEach(catItem => {
+    const category = catItem.dataset.category;
+    const countEl = catItem.querySelector('.selection-count');
+    if (!countEl) return;
+
+    const checkedInCategory = catItem.querySelectorAll('.limit-domain-checkbox.checked').length;
+    if (checkedInCategory > 0) {
+      countEl.textContent = `${checkedInCategory} selected`;
+    } else {
+      countEl.textContent = '';
+    }
+  });
+}
+
+function setLimitSelection(selection) {
+  currentLimitSelection = selection;
+  limitTimeSection?.classList.remove('hidden');
+  if (limitSaveBtn) limitSaveBtn.disabled = false;
+
+  // Build display text from categories and domains
+  const displayParts = [];
+
+  // Add category names
+  if (selection.categories && selection.categories.length > 0) {
+    selection.categories.forEach(cat => {
+      const info = categoriesInfo[cat] || { icon: '📱', name: cat };
+      displayParts.push(`${info.icon} ${info.name}`);
+    });
+  }
+
+  // Add domain names
+  if (selection.domains && selection.domains.length > 0) {
+    selection.domains.forEach(domain => {
+      displayParts.push(domain);
+    });
+  }
+
+  // Format display text
+  let displayText;
+  if (displayParts.length === 1) {
+    displayText = displayParts[0];
+  } else if (displayParts.length === 2) {
+    displayText = `${displayParts[0]}, ${displayParts[1]}`;
+  } else {
+    displayText = `${displayParts[0]}, ${displayParts[1]} <span class="active-limit-more">+${displayParts.length - 2} more</span>`;
   }
 
   limitSelectedTarget.innerHTML = `Limit for <strong>${displayText}</strong>`;
@@ -6031,14 +7033,20 @@ function resetLimitSelection() {
   currentLimitSelection = null;
   limitTimeSection?.classList.add('hidden');
   if (limitSaveBtn) limitSaveBtn.disabled = true;
-  limitSelectionList.querySelectorAll('.limit-selectable-item').forEach(el => el.classList.remove('selected'));
+  limitSelectionList.querySelectorAll('.custom-checkbox').forEach(cb => cb.classList.remove('checked'));
+  updateSelectionCounts();
 }
 
 // Delete limit function
-window.deleteLimit = async function(limitId) {
+window.deleteLimit = async function(category) {
   try {
-    await chrome.runtime.sendMessage({ type: 'DELETE_LIMIT', id: limitId });
-    delete categoryLimits[limitId];
+    await chrome.runtime.sendMessage({
+      type: 'SET_LIMIT',
+      category,
+      limit: null
+    });
+
+    delete categoryLimits[category];
     renderActiveLimits();
   } catch (error) {
     console.error('Error deleting limit:', error);
@@ -6093,6 +7101,7 @@ function initFlowChart() {
     flowchartData = processSessionsToMinutes(filteredSessions, categoriesInfo);
     renderFlowChartGrid();
     renderFlowChartLegend();
+    calculateFocusStats(filteredSessions, categoriesInfo);
   });
 
   // Populate device dropdown on load
@@ -6105,7 +7114,6 @@ function initFlowChart() {
     flowchartTooltip.innerHTML = `
       <div class="flowchart-tooltip-time"></div>
       <div class="flowchart-tooltip-category"></div>
-      <div class="flowchart-tooltip-title"></div>
       <div class="flowchart-tooltip-domain"></div>
       <div class="flowchart-tooltip-device"></div>
     `;
@@ -6212,6 +7220,9 @@ async function loadFlowChart() {
     renderFlowChartGrid();
     renderFlowChartLegend();
 
+    // Calculate and display focus stats
+    calculateFocusStats(filteredSessions, categoriesInfo);
+
   } catch (error) {
     console.error('Error loading flow chart:', error);
   }
@@ -6223,12 +7234,7 @@ function processSessionsToMinutes(sessions, categoriesInfo) {
     Array.from({ length: 60 }, () => null)
   );
 
-  // Filter out unclassified sessions that would show as gray
-  const classified = sessions.filter(s =>
-    s.category && s.category !== 'uncategorized' && s.category !== 'needs_server_classification'
-  );
-
-  classified.forEach(session => {
+  sessions.forEach(session => {
     const productivityType = getProductivityType(session.category);
     const isRemote = session.deviceSource && session.deviceSource !== 'local';
     const deviceSource = session.deviceSource || 'local';
@@ -6265,7 +7271,6 @@ function processSessionsToMinutes(sessions, categoriesInfo) {
             grid[hour][minute] = {
               category: session.category,
               domain: domain,
-              title: visit.title || '',
               productivityType,
               isRemote,
               deviceSource
@@ -6304,8 +7309,11 @@ function processSessionsToMinutes(sessions, categoriesInfo) {
 }
 
 function getProductivityType(category) {
-  if (PRODUCTIVITY_GROUPS.productive.categories.includes(category)) return 'productive';
-  if (PRODUCTIVITY_GROUPS.unproductive.categories.includes(category)) return 'unproductive';
+  const productiveCategories = ['productivity', 'education'];
+  const unproductiveCategories = ['social', 'entertainment', 'games', 'adult'];
+
+  if (productiveCategories.includes(category)) return 'productive';
+  if (unproductiveCategories.includes(category)) return 'unproductive';
   return 'neutral';
 }
 
@@ -6357,6 +7365,12 @@ function renderFlowChartGrid() {
         const color = getCellColor(data, isDark);
         cell.style.backgroundColor = color;
 
+        // Remote sessions: show with reduced opacity
+        if (data.isRemote) {
+          cell.style.opacity = '0.55';
+          cell.classList.add('remote-cell');
+        }
+
         // Add hover events
         cell.addEventListener('mouseenter', (e) => showFlowchartTooltip(e, h, m, data));
         cell.addEventListener('mouseleave', hideFlowchartTooltip);
@@ -6372,31 +7386,27 @@ function renderFlowChartGrid() {
   }
 }
 
-const FLOWCHART_CATEGORY_COLORS = {
-  workspace: '#007AFF',    // Blue (productive)
-  learning: '#34C759',     // Green (productive)
-  social: '#FF9500',       // Orange (unproductive)
-  entertainment: '#FF6B6B',// Red (unproductive)
-  music: '#AF52DE',        // Purple (unproductive)
-  games: '#FF2D55',        // Pink (unproductive)
-  adult: '#8B0000',        // Dark red (unproductive)
-  shopping: '#5856D6',     // Indigo (neutral)
-  news: '#40E0D0',         // Teal (neutral)
-};
-
-function getFlowchartCategoryColor(category, isDark) {
-  return FLOWCHART_CATEGORY_COLORS[category] || (isDark ? '#555555' : '#A0A0A0');
-}
-
 function getCellColor(data, isDark) {
   if (flowchartMode === 'productivity') {
     switch (data.productivityType) {
-      case 'productive': return PRODUCTIVITY_GROUPS.productive.color;
-      case 'unproductive': return PRODUCTIVITY_GROUPS.unproductive.color;
-      default: return PRODUCTIVITY_GROUPS.neutral.color;
+      case 'productive': return '#34C759';
+      case 'unproductive': return '#FF3B30';
+      default: return isDark ? '#555555' : '#A0A0A0';
     }
   } else {
-    return getFlowchartCategoryColor(data.category, isDark);
+    // Category mode - use category colors
+    const categoryColors = {
+      social: '#8BAF5B',
+      entertainment: '#FF9500',
+      productivity: '#34C759',
+      shopping: '#FF2D55',
+      news: '#5856D6',
+      games: '#AF52DE',
+      education: '#00C7BE',
+      adult: '#FF3B30',
+      other: isDark ? '#555555' : '#A0A0A0'
+    };
+    return categoryColors[data.category] || categoryColors.other;
   }
 }
 
@@ -6412,17 +7422,18 @@ function showFlowchartTooltip(e, hour, minute, data) {
     : (data.category || 'unknown');
   flowchartTooltip.querySelector('.flowchart-tooltip-category').textContent =
     categoryText.charAt(0).toUpperCase() + categoryText.slice(1);
-  const titleEl = flowchartTooltip.querySelector('.flowchart-tooltip-title');
-  titleEl.textContent = data.title || '';
-  titleEl.style.display = data.title ? '' : 'none';
-
   flowchartTooltip.querySelector('.flowchart-tooltip-domain').textContent = data.domain || '';
 
   // Show device source
   const deviceEl = flowchartTooltip.querySelector('.flowchart-tooltip-device');
   if (deviceEl) {
-    deviceEl.textContent = '';
-    deviceEl.style.display = 'none';
+    if (data.isRemote) {
+      deviceEl.textContent = `📱 ${data.deviceSource || 'Other Devices'}`;
+      deviceEl.style.display = 'block';
+    } else {
+      deviceEl.textContent = '';
+      deviceEl.style.display = 'none';
+    }
   }
 
   flowchartTooltip.classList.add('visible');
@@ -6447,61 +7458,183 @@ function renderFlowChartLegend() {
 
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
 
+  // Check if there are any remote sessions in the current data
+  let hasRemoteSessions = false;
+  if (flowchartData) {
+    for (let h = 0; h < 24 && !hasRemoteSessions; h++) {
+      for (let m = 0; m < 60 && !hasRemoteSessions; m++) {
+        if (flowchartData[h][m]?.isRemote) {
+          hasRemoteSessions = true;
+        }
+      }
+    }
+  }
+
   let legendHtml = '';
 
   if (flowchartMode === 'productivity') {
     legendHtml = `
       <div class="flowchart-legend-item">
-        <div class="flowchart-legend-color" style="background: ${PRODUCTIVITY_GROUPS.productive.color};"></div>
+        <div class="flowchart-legend-color" style="background: #34C759;"></div>
         <span>Productive</span>
       </div>
       <div class="flowchart-legend-item">
-        <div class="flowchart-legend-color" style="background: ${PRODUCTIVITY_GROUPS.unproductive.color};"></div>
+        <div class="flowchart-legend-color" style="background: #FF3B30;"></div>
         <span>Unproductive</span>
       </div>
       <div class="flowchart-legend-item">
-        <div class="flowchart-legend-color" style="background: ${PRODUCTIVITY_GROUPS.neutral.color};"></div>
+        <div class="flowchart-legend-color" style="background: ${isDark ? '#555555' : '#A0A0A0'};"></div>
         <span>Neutral</span>
       </div>
     `;
   } else {
-    // Build legend grouped by productivity: Productive (left) | Unproductive (right)
-    const productiveCats = PRODUCTIVITY_GROUPS.productive.categories;
-    const unproductiveCats = PRODUCTIVITY_GROUPS.unproductive.categories;
-    const neutralCats = PRODUCTIVITY_GROUPS.neutral.categories.filter(c => c !== 'other' && c !== 'adult');
-
-    const makeLegendItem = (cat) => {
-      const info = categoriesInfo[cat];
-      if (!info) return '';
-      const color = FLOWCHART_CATEGORY_COLORS[cat] || info.color;
-      return `
-        <div class="flowchart-legend-item">
-          <div class="flowchart-legend-color" style="background: ${color};"></div>
-          <span>${info.name}</span>
-        </div>`;
+    const categoryColors = {
+      social: ['#8BAF5B', 'Social'],
+      entertainment: ['#FF9500', 'Entertainment'],
+      productivity: ['#34C759', 'Productivity'],
+      shopping: ['#FF2D55', 'Shopping'],
+      news: ['#5856D6', 'News'],
+      games: ['#AF52DE', 'Games'],
+      education: ['#00C7BE', 'Education']
     };
 
-    const productiveHtml = productiveCats.map(makeLegendItem).join('');
-    const neutralHtml = neutralCats.map(makeLegendItem).join('');
-    const unproductiveHtml = unproductiveCats.map(makeLegendItem).join('');
+    legendHtml = Object.entries(categoryColors).map(([key, [color, label]]) => `
+      <div class="flowchart-legend-item">
+        <div class="flowchart-legend-color" style="background: ${color};"></div>
+        <span>${label}</span>
+      </div>
+    `).join('');
+  }
 
-    legendHtml = `
-      <div class="flowchart-legend-group">
-        <div class="flowchart-legend-group-label productive">Productive</div>
-        <div class="flowchart-legend-group-items">${productiveHtml}</div>
-      </div>
-      <div class="flowchart-legend-group">
-        <div class="flowchart-legend-group-label neutral">Neutral</div>
-        <div class="flowchart-legend-group-items">${neutralHtml}</div>
-      </div>
-      <div class="flowchart-legend-group">
-        <div class="flowchart-legend-group-label unproductive">Unproductive</div>
-        <div class="flowchart-legend-group-items">${unproductiveHtml}</div>
+  // Add remote device indicator to legend
+  if (hasRemoteSessions) {
+    legendHtml += `
+      <div class="flowchart-legend-item flowchart-legend-divider">|</div>
+      <div class="flowchart-legend-item">
+        <div class="flowchart-legend-color" style="background: #888; opacity: 0.55;"></div>
+        <span>📱 Other Device</span>
       </div>
     `;
   }
 
   container.innerHTML = legendHtml;
+}
+
+function calculateFocusStats(sessions, categoriesInfo) {
+  // Use flowchartData to calculate based on 2-minute intervals
+  if (!flowchartData) return;
+
+  let longestFocus = { duration: 0, startHour: null, startMin: null };
+  let longestDistraction = { duration: 0, startHour: null, startMin: null };
+
+  let currentFocusStart = null;
+  let currentFocusCount = 0;
+  let currentDistractionStart = null;
+  let currentDistractionCount = 0;
+
+  // Iterate through 2-minute intervals
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 2) {
+      // Check what's in this 2-minute block
+      const data1 = flowchartData[h][m];
+      const data2 = flowchartData[h][m + 1];
+
+      // Determine dominant productivity type in this 2-min block
+      let blockType = null;
+      if (data1 || data2) {
+        const types = [data1?.productivityType, data2?.productivityType].filter(Boolean);
+        if (types.length > 0) {
+          const productive = types.filter(t => t === 'productive').length;
+          const unproductive = types.filter(t => t === 'unproductive').length;
+          if (productive >= unproductive && productive > 0) {
+            blockType = 'productive';
+          } else if (unproductive > 0) {
+            blockType = 'unproductive';
+          }
+        }
+      }
+
+      if (blockType === 'productive') {
+        // End distraction streak
+        if (currentDistractionCount > 0 && currentDistractionCount * 2 > longestDistraction.duration) {
+          longestDistraction.duration = currentDistractionCount * 2;
+          longestDistraction.startHour = currentDistractionStart.h;
+          longestDistraction.startMin = currentDistractionStart.m;
+        }
+        currentDistractionCount = 0;
+        currentDistractionStart = null;
+
+        // Continue focus streak
+        if (!currentFocusStart) currentFocusStart = { h, m };
+        currentFocusCount++;
+      } else if (blockType === 'unproductive') {
+        // End focus streak
+        if (currentFocusCount > 0 && currentFocusCount * 2 > longestFocus.duration) {
+          longestFocus.duration = currentFocusCount * 2;
+          longestFocus.startHour = currentFocusStart.h;
+          longestFocus.startMin = currentFocusStart.m;
+        }
+        currentFocusCount = 0;
+        currentFocusStart = null;
+
+        // Continue distraction streak
+        if (!currentDistractionStart) currentDistractionStart = { h, m };
+        currentDistractionCount++;
+      } else {
+        // Neutral or empty - end both streaks
+        if (currentFocusCount > 0 && currentFocusCount * 2 > longestFocus.duration) {
+          longestFocus.duration = currentFocusCount * 2;
+          longestFocus.startHour = currentFocusStart.h;
+          longestFocus.startMin = currentFocusStart.m;
+        }
+        if (currentDistractionCount > 0 && currentDistractionCount * 2 > longestDistraction.duration) {
+          longestDistraction.duration = currentDistractionCount * 2;
+          longestDistraction.startHour = currentDistractionStart.h;
+          longestDistraction.startMin = currentDistractionStart.m;
+        }
+        currentFocusCount = 0;
+        currentFocusStart = null;
+        currentDistractionCount = 0;
+        currentDistractionStart = null;
+      }
+    }
+  }
+
+  // Check final streaks
+  if (currentFocusCount > 0 && currentFocusCount * 2 > longestFocus.duration) {
+    longestFocus.duration = currentFocusCount * 2;
+    longestFocus.startHour = currentFocusStart.h;
+    longestFocus.startMin = currentFocusStart.m;
+  }
+  if (currentDistractionCount > 0 && currentDistractionCount * 2 > longestDistraction.duration) {
+    longestDistraction.duration = currentDistractionCount * 2;
+    longestDistraction.startHour = currentDistractionStart.h;
+    longestDistraction.startMin = currentDistractionStart.m;
+  }
+
+  // Update UI (duration is in minutes, convert to ms for formatTime)
+  const focusValueEl = document.getElementById('flowchartLongestFocus');
+  const focusTimeEl = document.getElementById('flowchartLongestFocusTime');
+  const distractionValueEl = document.getElementById('flowchartLongestDistraction');
+  const distractionTimeEl = document.getElementById('flowchartLongestDistractionTime');
+
+  if (focusValueEl) {
+    focusValueEl.textContent = longestFocus.duration > 0 ? `${longestFocus.duration}m` : '0m';
+  }
+  if (focusTimeEl && longestFocus.startHour !== null) {
+    focusTimeEl.textContent = `at ${longestFocus.startHour.toString().padStart(2, '0')}:${longestFocus.startMin.toString().padStart(2, '0')}`;
+  } else if (focusTimeEl) {
+    focusTimeEl.textContent = '--';
+  }
+
+  if (distractionValueEl) {
+    distractionValueEl.textContent = longestDistraction.duration > 0 ? `${longestDistraction.duration}m` : '0m';
+  }
+  if (distractionTimeEl && longestDistraction.startHour !== null) {
+    distractionTimeEl.textContent = `at ${longestDistraction.startHour.toString().padStart(2, '0')}:${longestDistraction.startMin.toString().padStart(2, '0')}`;
+  } else if (distractionTimeEl) {
+    distractionTimeEl.textContent = '--';
+  }
 }
 
 // Initialize flow chart on page load
@@ -6586,8 +7719,14 @@ function showFlowchartDetailModal(hour, minute, data) {
     favicon.style.display = 'none';
   }
 
+  const categoryColors = {
+    social: '#8BAF5B', entertainment: '#FF9500', productivity: '#34C759',
+    shopping: '#FF2D55', news: '#5856D6', games: '#AF52DE',
+    education: '#00C7BE', adult: '#FF3B30', other: '#8E8E93'
+  };
+
   const dot = document.getElementById('flowchartDetailCategoryDot');
-  dot.style.background = FLOWCHART_CATEGORY_COLORS[data.category] || '#8E8E93';
+  dot.style.background = categoryColors[data.category] || categoryColors.other;
   document.getElementById('flowchartDetailCategory').textContent =
     (data.category || 'other').charAt(0).toUpperCase() + (data.category || 'other').slice(1);
 
@@ -6772,6 +7911,306 @@ function openSiteAnalysisModal(category, categoryData, domains, color) {
 document.addEventListener('DOMContentLoaded', initSiteAnalysisModal);
 
 // ============================================
+// Focus Mode
+// ============================================
+let focusState = {
+  isRunning: false,
+  isPaused: false,
+  isBreak: false,
+  timeRemaining: 25 * 60,
+  sessionsCompleted: 0,
+  totalFocusTime: 0,
+  blockedAttempts: 0,
+  intervalId: null
+};
+
+let focusSettings = {
+  focusDuration: 25,
+  shortBreak: 5,
+  longBreak: 15,
+  blockedCategories: ['social', 'entertainment', 'games']
+};
+
+function loadFocusMode() {
+  loadFocusSettings();
+  loadFocusStats();
+  updateFocusUI();
+  renderFocusHistory();
+}
+
+function loadFocusSettings() {
+  const saved = localStorage.getItem('focusSettings');
+  if (saved) {
+    focusSettings = JSON.parse(saved);
+  }
+
+  document.getElementById('focusDuration').value = focusSettings.focusDuration;
+  document.getElementById('focusShortBreak').value = focusSettings.shortBreak;
+  document.getElementById('focusLongBreak').value = focusSettings.longBreak;
+
+  // Update blocked categories
+  document.querySelectorAll('.focus-block-tag').forEach(tag => {
+    tag.classList.toggle('active', focusSettings.blockedCategories.includes(tag.dataset.category));
+  });
+}
+
+function loadFocusStats() {
+  const today = getTodayDate();
+  const saved = localStorage.getItem(`focusStats_${today}`);
+  if (saved) {
+    const stats = JSON.parse(saved);
+    focusState.sessionsCompleted = stats.sessions || 0;
+    focusState.totalFocusTime = stats.totalTime || 0;
+    focusState.blockedAttempts = stats.blocked || 0;
+  } else {
+    focusState.sessionsCompleted = 0;
+    focusState.totalFocusTime = 0;
+    focusState.blockedAttempts = 0;
+  }
+}
+
+function saveFocusStats() {
+  const today = getTodayDate();
+  localStorage.setItem(`focusStats_${today}`, JSON.stringify({
+    sessions: focusState.sessionsCompleted,
+    totalTime: focusState.totalFocusTime,
+    blocked: focusState.blockedAttempts
+  }));
+}
+
+function saveFocusSettings() {
+  focusSettings.focusDuration = parseInt(document.getElementById('focusDuration').value) || 25;
+  focusSettings.shortBreak = parseInt(document.getElementById('focusShortBreak').value) || 5;
+  focusSettings.longBreak = parseInt(document.getElementById('focusLongBreak').value) || 15;
+
+  focusSettings.blockedCategories = [];
+  document.querySelectorAll('.focus-block-tag.active').forEach(tag => {
+    focusSettings.blockedCategories.push(tag.dataset.category);
+  });
+
+  localStorage.setItem('focusSettings', JSON.stringify(focusSettings));
+}
+
+function updateFocusUI() {
+  const minutes = Math.floor(focusState.timeRemaining / 60);
+  const seconds = focusState.timeRemaining % 60;
+
+  document.getElementById('focusTimerTime').textContent =
+    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+  document.getElementById('focusTimerLabel').textContent =
+    focusState.isBreak ? 'Break' : 'Focus';
+
+  // Update progress circle
+  const totalTime = focusState.isBreak
+    ? (focusState.sessionsCompleted % 4 === 0 ? focusSettings.longBreak : focusSettings.shortBreak) * 60
+    : focusSettings.focusDuration * 60;
+
+  const progress = 1 - (focusState.timeRemaining / totalTime);
+  const circumference = 2 * Math.PI * 90;
+  const offset = circumference * (1 - progress);
+
+  const circle = document.getElementById('focusProgressCircle');
+  circle.style.strokeDashoffset = offset;
+
+  const progressEl = document.getElementById('focusTimerProgress');
+  progressEl.classList.toggle('break', focusState.isBreak);
+
+  // Update button
+  const startBtn = document.getElementById('focusStartBtn');
+  startBtn.textContent = focusState.isRunning ? '⏸' : '▶';
+
+  // Update stats
+  document.getElementById('focusCompletedSessions').textContent = focusState.sessionsCompleted;
+  document.getElementById('focusTotalTime').textContent = formatTime(focusState.totalFocusTime * 1000);
+  document.getElementById('focusBlockedCount').textContent = focusState.blockedAttempts;
+
+  // Update tomatoes
+  const tomatoesEl = document.getElementById('focusTomatoes');
+  tomatoesEl.innerHTML = Array.from({ length: 4 }, (_, i) =>
+    `<span class="focus-tomato ${i < focusState.sessionsCompleted % 4 ? 'completed' : ''}">🍅</span>`
+  ).join('');
+}
+
+/**
+ * Sync focus mode state with chrome.storage for blocking
+ */
+async function syncFocusModeToStorage() {
+  const isActive = focusState.isRunning && !focusState.isBreak;
+  await chrome.storage.local.set({
+    focusMode: {
+      isActive,
+      blockedCategories: focusSettings.blockedCategories,
+      startTime: isActive ? Date.now() : null,
+      duration: isActive ? focusSettings.focusDuration * 60 * 1000 : null, // Duration in ms
+      allowedSites: [] // Sites allowed during this session
+    }
+  });
+}
+
+function startFocusTimer() {
+  if (focusState.isRunning) {
+    // Pause
+    focusState.isRunning = false;
+    clearInterval(focusState.intervalId);
+    syncFocusModeToStorage(); // Update storage when paused
+  } else {
+    // Start
+    focusState.isRunning = true;
+    saveFocusSettings();
+    syncFocusModeToStorage(); // Update storage when started
+
+    focusState.intervalId = setInterval(() => {
+      focusState.timeRemaining--;
+
+      if (focusState.timeRemaining <= 0) {
+        handleTimerComplete();
+      }
+
+      updateFocusUI();
+    }, 1000);
+  }
+
+  updateFocusUI();
+}
+
+function handleTimerComplete() {
+  clearInterval(focusState.intervalId);
+  focusState.isRunning = false;
+
+  if (!focusState.isBreak) {
+    // Focus session completed
+    focusState.sessionsCompleted++;
+    focusState.totalFocusTime += focusSettings.focusDuration * 60;
+    saveFocusStats();
+    saveFocusSessionToDb(); // Save to IndexedDB
+
+    // Start break
+    focusState.isBreak = true;
+    syncFocusModeToStorage(); // Blocking disabled during break
+
+    const breakTime = focusState.sessionsCompleted % 4 === 0
+      ? focusSettings.longBreak
+      : focusSettings.shortBreak;
+    focusState.timeRemaining = breakTime * 60;
+
+    // Notification
+    if (Notification.permission === 'granted') {
+      new Notification('🍅 Focus session complete!', {
+        body: `Time for a ${breakTime} minute break.`
+      });
+    }
+  } else {
+    // Break completed
+    focusState.isBreak = false;
+    focusState.timeRemaining = focusSettings.focusDuration * 60;
+
+    if (Notification.permission === 'granted') {
+      new Notification('⏰ Break over!', {
+        body: 'Ready for another focus session?'
+      });
+    }
+  }
+
+  updateFocusUI();
+}
+
+function resetFocusTimer() {
+  clearInterval(focusState.intervalId);
+  focusState.isRunning = false;
+  focusState.isBreak = false;
+  focusState.timeRemaining = focusSettings.focusDuration * 60;
+  syncFocusModeToStorage(); // Clear blocking state
+  updateFocusUI();
+}
+
+/**
+ * Save focus session to IndexedDB for persistence
+ */
+async function saveFocusSessionToDb() {
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_FOCUS_SESSION',
+      session: {
+        date: getTodayDate(),
+        duration: focusSettings.focusDuration * 60 * 1000, // Convert to ms
+        completedAt: Date.now()
+      }
+    });
+  } catch (error) {
+    console.error('Error saving focus session to DB:', error);
+  }
+}
+
+function skipFocusTimer() {
+  handleTimerComplete();
+}
+
+function renderFocusHistory() {
+  const container = document.getElementById('focusHistoryWeek');
+  if (!container) return;
+
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const today = new Date();
+
+  container.innerHTML = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(today);
+    date.setDate(date.getDate() - (6 - i));
+    const dateStr = formatDateLocal(date);
+    const saved = localStorage.getItem(`focusStats_${dateStr}`);
+    const sessions = saved ? JSON.parse(saved).sessions || 0 : 0;
+
+    return `
+      <div class="focus-history-day">
+        <div class="focus-history-day-label">${days[date.getDay()]}</div>
+        <div class="focus-history-day-tomatoes">
+          ${Array.from({ length: Math.min(sessions, 4) }, () =>
+            '<span class="focus-tomato completed">🍅</span>'
+          ).join('') || '<span style="color: var(--text-tertiary);">-</span>'}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function initFocusMode() {
+  // Start/Pause button
+  document.getElementById('focusStartBtn')?.addEventListener('click', startFocusTimer);
+
+  // Reset button
+  document.getElementById('focusResetBtn')?.addEventListener('click', resetFocusTimer);
+
+  // Skip button
+  document.getElementById('focusSkipBtn')?.addEventListener('click', skipFocusTimer);
+
+  // Settings inputs
+  ['focusDuration', 'focusShortBreak', 'focusLongBreak'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      saveFocusSettings();
+      if (!focusState.isRunning && !focusState.isBreak) {
+        focusState.timeRemaining = focusSettings.focusDuration * 60;
+        updateFocusUI();
+      }
+    });
+  });
+
+  // Block category toggles
+  document.querySelectorAll('.focus-block-tag').forEach(tag => {
+    tag.addEventListener('click', () => {
+      tag.classList.toggle('active');
+      saveFocusSettings();
+    });
+  });
+
+  // Request notification permission
+  if (Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', initFocusMode);
+
+// ============================================
 // Reports Page
 // ============================================
 let currentReportPeriod = 'week';
@@ -6788,7 +8227,6 @@ async function loadReports() {
     renderProductivityHeatmap();
     renderCategoryTrends();
     renderReportTopSites();
-    renderCategoryClassification();
   } catch (error) {
     console.error('Error loading reports:', error);
   }
@@ -6824,14 +8262,16 @@ async function loadReportData() {
   }
   
   // Fetch data for current and previous periods
-  const [currentData, prevData] = await Promise.all([
+  const [currentData, prevData, goalsData] = await Promise.all([
     fetchPeriodData(startDate, endDate),
-    fetchPeriodData(prevStartDate, prevEndDate)
+    fetchPeriodData(prevStartDate, prevEndDate),
+    chrome.runtime.sendMessage({ type: 'GET_GOALS' })
   ]);
-
+  
   reportData = {
     current: currentData,
     previous: prevData,
+    goals: goalsData.data || [],
     period: currentReportPeriod,
     startDate,
     endDate,
@@ -6871,8 +8311,6 @@ async function fetchPeriodData(startDate, endDate) {
   const hourlyData = Array(24).fill(0);
   const dailyData = {};
   const domains = {};
-  // Collect classified sites: { category -> { subcategory -> [{ domain, title, time }] } }
-  const classifiedSites = {};
   // Track hourly data by day of week for heatmap
   const hourlyByDay = {}; // { 'Sun': { 0: time, 1: time, ... }, ... }
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -6895,12 +8333,15 @@ async function fetchPeriodData(startDate, endDate) {
       sessions.forEach(session => {
         if (session.startTime && session.duration) {
           const startHour = new Date(session.startTime).getHours();
+          // Distribute session duration across hours it spans
           const durationMs = session.duration;
           const durationHours = durationMs / (60 * 60 * 1000);
-
+          
           if (durationHours < 1) {
+            // Session fits in one hour
             hourlyByDay[dayOfWeek][startHour] += durationMs;
           } else {
+            // Session spans multiple hours - distribute proportionally
             const hoursSpanned = Math.min(Math.ceil(durationHours), 24 - startHour);
             const perHour = durationMs / hoursSpanned;
             for (let h = 0; h < hoursSpanned; h++) {
@@ -6908,30 +8349,6 @@ async function fetchPeriodData(startDate, endDate) {
               hourlyByDay[dayOfWeek][hour] += perHour;
             }
           }
-        }
-
-        // Collect classified sites from session visits
-        const cat = session.category || 'other';
-        const subcat = session.subcategory || 'general';
-        if (!classifiedSites[cat]) classifiedSites[cat] = {};
-        if (!classifiedSites[cat][subcat]) classifiedSites[cat][subcat] = {};
-
-        if (session.visits && session.visits.length > 0) {
-          session.visits.forEach(visit => {
-            try {
-              const domain = new URL(visit.url).hostname.replace(/^www\./, '');
-              const key = domain;
-              if (!classifiedSites[cat][subcat][key]) {
-                classifiedSites[cat][subcat][key] = { domain, title: visit.title || domain, time: 0, visits: 0 };
-              }
-              classifiedSites[cat][subcat][key].time += (session.duration || 0) / session.visits.length;
-              classifiedSites[cat][subcat][key].visits++;
-              // Update title if this one is more informative
-              if (visit.title && visit.title.length > classifiedSites[cat][subcat][key].title.length) {
-                classifiedSites[cat][subcat][key].title = visit.title;
-              }
-            } catch (e) { /* skip invalid URLs */ }
-          });
         }
       });
     } else if (stats.totalTime > 0) {
@@ -6986,7 +8403,6 @@ async function fetchPeriodData(startDate, endDate) {
     productive,
     unproductive,
     neutral,
-    classifiedSites,
     dayCount: dates.length
   };
 }
@@ -7000,9 +8416,14 @@ function renderReportSummary() {
   const { current } = reportData;
   const avgTime = current.dayCount > 0 ? current.totalTime / current.dayCount : 0;
   
+  // Count completed goals
+  let goalsCompleted = 0;
+  let totalGoals = reportData.goals.length;
+  
   document.getElementById('reportTotalTime').textContent = formatTime(current.totalTime);
   document.getElementById('reportAvgTime').textContent = formatTime(avgTime);
   document.getElementById('reportProductivity').textContent = `${current.productivity}%`;
+  document.getElementById('reportGoalsCompleted').textContent = `${goalsCompleted}/${totalGoals}`;
 }
 
 /**
@@ -7241,190 +8662,6 @@ function renderReportTopSites() {
       </div>
     `;
   }).join('');
-}
-
-/**
- * Render category classification tree
- * Shows: Productivity Group > Category > Subcategory > Sites (domain + title)
- */
-function renderCategoryClassification() {
-  const container = document.getElementById('reportClassification');
-  if (!container || !reportData) return;
-
-  const { classifiedSites } = reportData.current;
-  if (!classifiedSites || Object.keys(classifiedSites).length === 0) {
-    container.innerHTML = '<div class="empty-state-text">No classified sites yet</div>';
-    return;
-  }
-
-  // Find max category time for bar scaling
-  let maxCatTime = 0;
-  Object.values(classifiedSites).forEach(subcats => {
-    let catTime = 0;
-    Object.values(subcats).forEach(sub => {
-      Object.values(sub).forEach(s => { catTime += s.time; });
-    });
-    if (catTime > maxCatTime) maxCatTime = catTime;
-  });
-
-  let html = '';
-
-  Object.entries(PRODUCTIVITY_GROUPS).forEach(([groupKey, group]) => {
-    const groupCats = group.categories.filter(c => classifiedSites[c]);
-    if (groupCats.length === 0) return;
-
-    let groupTime = 0;
-    let groupSiteCount = 0;
-    groupCats.forEach(cat => {
-      Object.values(classifiedSites[cat]).forEach(subSites => {
-        const sites = Object.values(subSites);
-        groupSiteCount += sites.length;
-        sites.forEach(s => { groupTime += s.time; });
-      });
-    });
-
-    html += `
-      <div class="clf-group" data-group="${groupKey}">
-        <div class="clf-group-header" style="background: color-mix(in srgb, ${group.color} 8%, transparent)">
-          <span class="clf-group-icon" style="background:${group.color}">${group.icon || '●'}</span>
-          <div class="clf-group-text">
-            <span class="clf-group-name">${group.name}</span>
-            <span class="clf-group-meta">${groupCats.length} categories &middot; ${groupSiteCount} sites</span>
-          </div>
-          <span class="clf-group-time" style="color:${group.color}">${formatTime(groupTime)}</span>
-          <span class="clf-expand-arrow expanded">▶</span>
-        </div>
-        <div class="clf-group-body expanded">
-    `;
-
-    groupCats.forEach(catKey => {
-      const info = categoriesInfo[catKey] || { icon: '📱', name: catKey, color: '#8E8E93' };
-      const catColor = info.color || '#8E8E93';
-      const subcats = classifiedSites[catKey];
-      let catTime = 0;
-      let catSiteCount = 0;
-      Object.values(subcats).forEach(subSites => {
-        const sites = Object.values(subSites);
-        catSiteCount += sites.length;
-        sites.forEach(s => { catTime += s.time; });
-      });
-
-      const barPercent = maxCatTime > 0 ? Math.round((catTime / maxCatTime) * 100) : 0;
-
-      const subcatEntries = Object.entries(subcats).sort((a, b) => {
-        const aTime = Object.values(a[1]).reduce((s, v) => s + v.time, 0);
-        const bTime = Object.values(b[1]).reduce((s, v) => s + v.time, 0);
-        return bTime - aTime;
-      });
-
-      html += `
-          <div class="clf-category" data-category="${catKey}">
-            <div class="clf-cat-header">
-              <div class="clf-cat-color" style="background:${catColor}"></div>
-              <span class="clf-cat-icon">${info.icon}</span>
-              <div class="clf-cat-text">
-                <span class="clf-cat-name">${info.name}</span>
-                <div class="clf-cat-bar-wrap">
-                  <div class="clf-cat-bar-fill" style="width:${barPercent}%; background:${catColor}"></div>
-                </div>
-              </div>
-              <div class="clf-cat-right">
-                <span class="clf-cat-time" style="color:${catColor}">${formatTime(catTime)}</span>
-                <span class="clf-cat-count">${catSiteCount} sites</span>
-              </div>
-              <span class="clf-expand-arrow">▶</span>
-            </div>
-            <div class="clf-cat-body">
-      `;
-
-      // Find max site time in this category for bar scaling
-      let maxSiteTime = 0;
-      subcatEntries.forEach(([_, sites]) => {
-        Object.values(sites).forEach(s => {
-          if (s.time > maxSiteTime) maxSiteTime = s.time;
-        });
-      });
-
-      subcatEntries.forEach(([subKey, sites]) => {
-        const sortedSites = Object.values(sites).sort((a, b) => b.time - a.time);
-        const subTime = sortedSites.reduce((s, v) => s + v.time, 0);
-        const subLabel = getSubcategoryName(subKey);
-        const showSubLabel = subKey !== 'general' || subcatEntries.length > 1;
-
-        if (showSubLabel) {
-          html += `
-              <div class="clf-subcategory">
-                <div class="clf-sub-header">
-                  <span class="clf-sub-dot" style="background:${catColor}"></span>
-                  <span class="clf-sub-name">${subLabel}</span>
-                  <span class="clf-sub-count">${sortedSites.length}</span>
-                  <span class="clf-sub-time">${formatTime(subTime)}</span>
-                </div>
-          `;
-        }
-
-        sortedSites.forEach(site => {
-          const faviconUrl = `https://www.google.com/s2/favicons?domain=${site.domain}&sz=32`;
-          const title = site.title && site.title !== site.domain
-            ? (site.title.length > 55 ? site.title.slice(0, 52) + '...' : site.title)
-            : '';
-          const siteBarPercent = maxSiteTime > 0 ? Math.round((site.time / maxSiteTime) * 100) : 0;
-
-          html += `
-                <div class="clf-site">
-                  <img class="clf-site-favicon" src="${faviconUrl}" alt="" onerror="this.parentElement.querySelector('.clf-site-domain').style.paddingLeft='0'">
-                  <div class="clf-site-info">
-                    <span class="clf-site-domain">${site.domain}</span>
-                    ${title ? `<span class="clf-site-title">${title}</span>` : ''}
-                  </div>
-                  <div class="clf-site-right">
-                    <div class="clf-site-bar">
-                      <div class="clf-site-bar-fill" style="width:${siteBarPercent}%; background:${catColor}"></div>
-                    </div>
-                    <span class="clf-site-visits">${site.visits} visits</span>
-                    <span class="clf-site-time" style="color:${catColor}">${formatTime(site.time)}</span>
-                  </div>
-                </div>
-          `;
-        });
-
-        if (showSubLabel) {
-          html += `</div>`;
-        }
-      });
-
-      html += `
-            </div>
-          </div>
-      `;
-    });
-
-    html += `
-        </div>
-      </div>
-    `;
-  });
-
-  container.innerHTML = html;
-
-  // Toggle expand/collapse — event delegation
-  container.addEventListener('click', (e) => {
-    const groupHeader = e.target.closest('.clf-group-header');
-    if (groupHeader) {
-      const body = groupHeader.nextElementSibling;
-      const arrow = groupHeader.querySelector('.clf-expand-arrow');
-      body.classList.toggle('expanded');
-      arrow.classList.toggle('expanded');
-      return;
-    }
-    const catHeader = e.target.closest('.clf-cat-header');
-    if (catHeader) {
-      const body = catHeader.nextElementSibling;
-      const arrow = catHeader.querySelector('.clf-expand-arrow');
-      body.classList.toggle('expanded');
-      arrow.classList.toggle('expanded');
-    }
-  });
 }
 
 /**
@@ -7802,15 +9039,315 @@ renderCustomCategories = function() {
   attachCustomCategoryEditHandlers();
 };
 
-// Update loadSettingsUI to also load category management, color palette, and whitelist
+// ============================================
+// Achievements System
+// ============================================
+
+const ACHIEVEMENTS = [
+  {
+    id: 'first_goal',
+    name: 'First Step',
+    desc: 'Set your first goal',
+    icon: '🎯',
+    check: (data) => data.goals.length > 0
+  },
+  {
+    id: 'streak_7',
+    name: 'Week Warrior',
+    desc: '7-day goal streak',
+    icon: '🔥',
+    check: (data) => data.maxStreak >= 7
+  },
+  {
+    id: 'streak_30',
+    name: 'Monthly Master',
+    desc: '30-day goal streak',
+    icon: '⚡',
+    check: (data) => data.maxStreak >= 30
+  },
+  {
+    id: 'productive_10h',
+    name: 'Getting Started',
+    desc: '10 hours productive',
+    icon: '📈',
+    check: (data) => data.totalProductive >= 10 * 60 * 60 * 1000
+  },
+  {
+    id: 'productive_100h',
+    name: 'Productivity Pro',
+    desc: '100 hours productive',
+    icon: '🚀',
+    check: (data) => data.totalProductive >= 100 * 60 * 60 * 1000
+  },
+  {
+    id: 'focus_10',
+    name: 'Focus Beginner',
+    desc: '10 focus sessions',
+    icon: '🍅',
+    check: (data) => data.focusSessions >= 10
+  },
+  {
+    id: 'focus_50',
+    name: 'Focus Master',
+    desc: '50 focus sessions',
+    icon: '🏆',
+    check: (data) => data.focusSessions >= 50
+  },
+  {
+    id: 'limit_keeper',
+    name: 'Self Control',
+    desc: 'Stay under limits for 7 days',
+    icon: '🛡️',
+    check: (data) => data.limitStreak >= 7
+  }
+];
+
+async function loadAchievements() {
+  const container = document.getElementById('achievementsGrid');
+  if (!container) return;
+  
+  // Gather achievement data
+  const data = await gatherAchievementData();
+  
+  // Load unlocked achievements from storage
+  const storage = await chrome.storage.local.get('achievements');
+  const unlockedAchievements = storage.achievements || {};
+  
+  // Check and update achievements
+  for (const achievement of ACHIEVEMENTS) {
+    if (!unlockedAchievements[achievement.id] && achievement.check(data)) {
+      unlockedAchievements[achievement.id] = {
+        unlockedAt: Date.now()
+      };
+    }
+  }
+  
+  // Save updated achievements
+  await chrome.storage.local.set({ achievements: unlockedAchievements });
+  
+  // Render achievements
+  container.innerHTML = ACHIEVEMENTS.map(achievement => {
+    const unlocked = unlockedAchievements[achievement.id];
+    const unlockedDate = unlocked ? new Date(unlocked.unlockedAt).toLocaleDateString() : null;
+    
+    return `
+      <div class="achievement-item ${unlocked ? 'unlocked' : 'locked'}">
+        <span class="achievement-icon">${achievement.icon}</span>
+        <span class="achievement-name">${achievement.name}</span>
+        <span class="achievement-desc">${achievement.desc}</span>
+        ${unlockedDate ? `<span class="achievement-date">Unlocked ${unlockedDate}</span>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+async function gatherAchievementData() {
+  // Get goals and calculate max streak
+  const storage = await chrome.storage.local.get('settings');
+  const goals = storage.settings?.goals || [];
+  
+  let maxStreak = 0;
+  goals.forEach(goal => {
+    const streak = calculateGoalStreak(goal, getGoalTypeInfo(goal.type));
+    if (streak > maxStreak) maxStreak = streak;
+  });
+  
+  // Get focus sessions count
+  let focusSessions = 0;
+  try {
+    const focusResponse = await chrome.runtime.sendMessage({ type: 'GET_FOCUS_SESSIONS' });
+    focusSessions = focusResponse.data?.length || 0;
+  } catch (e) {}
+  
+  // Calculate total productive time (simplified - would need historical data)
+  let totalProductive = 0;
+  try {
+    const todayStats = await chrome.runtime.sendMessage({ type: 'GET_TODAY_STATS' });
+    const categories = todayStats.data?.categories || {};
+    Object.entries(categories).forEach(([cat, data]) => {
+      if (PRODUCTIVITY_GROUPS.productive.categories.includes(cat)) {
+        totalProductive += data.time || 0;
+      }
+    });
+  } catch (e) {}
+  
+  return {
+    goals,
+    maxStreak,
+    focusSessions,
+    totalProductive,
+    limitStreak: 0 // Would need to track this
+  };
+}
+
+// Update loadSettingsUI to also load category management, achievements, color palette, downtime, and whitelist
 const originalLoadSettingsUI = loadSettingsUI;
 loadSettingsUI = async function() {
   await originalLoadSettingsUI();
   await loadCategories(); // Ensure categoriesInfo is loaded
   await loadCategoryManagement();
   initColorPalette(); // Initialize accent color palette
+  initDowntime(); // Initialize downtime settings
   initWhitelist(); // Initialize whitelist settings
 };
+
+// ============================================
+// Downtime / Scheduled Blocking
+// ============================================
+
+/**
+ * Initialize downtime settings UI
+ */
+async function initDowntime() {
+  const enabledToggle = document.getElementById('downtimeEnabled');
+  const optionsContainer = document.getElementById('downtimeOptions');
+  const startInput = document.getElementById('downtimeStart');
+  const endInput = document.getElementById('downtimeEnd');
+  const daysContainer = document.getElementById('downtimeDays');
+  const categoriesContainer = document.getElementById('downtimeCategories');
+  
+  if (!enabledToggle || !optionsContainer) return;
+  
+  // Load saved downtime settings
+  const settings = await loadDowntimeSettings();
+  
+  // Set initial state
+  enabledToggle.checked = settings.enabled;
+  optionsContainer.style.display = settings.enabled ? 'block' : 'none';
+  
+  if (startInput) startInput.value = settings.startTime;
+  if (endInput) endInput.value = settings.endTime;
+  
+  // Initialize day buttons
+  if (daysContainer) {
+    const dayBtns = daysContainer.querySelectorAll('.day-btn');
+    dayBtns.forEach(btn => {
+      const day = parseInt(btn.dataset.day);
+      if (settings.activeDays.includes(day)) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+      
+      btn.addEventListener('click', () => {
+        btn.classList.toggle('active');
+        saveDowntimeSettings();
+      });
+    });
+  }
+  
+  // Populate categories
+  if (categoriesContainer) {
+    populateDowntimeCategories(categoriesContainer, settings.blockedCategories);
+  }
+  
+  // Event listeners
+  enabledToggle.addEventListener('change', () => {
+    optionsContainer.style.display = enabledToggle.checked ? 'block' : 'none';
+    saveDowntimeSettings();
+  });
+  
+  startInput?.addEventListener('change', saveDowntimeSettings);
+  endInput?.addEventListener('change', saveDowntimeSettings);
+}
+
+/**
+ * Load downtime settings from storage
+ */
+async function loadDowntimeSettings() {
+  try {
+    const result = await chrome.storage.local.get('downtimeSettings');
+    return result.downtimeSettings || {
+      enabled: false,
+      startTime: '22:00',
+      endTime: '07:00',
+      activeDays: [0, 1, 2, 3, 4, 5, 6], // All days
+      blockedCategories: ['social', 'entertainment', 'games']
+    };
+  } catch (error) {
+    console.error('Error loading downtime settings:', error);
+    return {
+      enabled: false,
+      startTime: '22:00',
+      endTime: '07:00',
+      activeDays: [0, 1, 2, 3, 4, 5, 6],
+      blockedCategories: ['social', 'entertainment', 'games']
+    };
+  }
+}
+
+/**
+ * Save downtime settings to storage
+ */
+async function saveDowntimeSettings() {
+  const enabledToggle = document.getElementById('downtimeEnabled');
+  const startInput = document.getElementById('downtimeStart');
+  const endInput = document.getElementById('downtimeEnd');
+  const daysContainer = document.getElementById('downtimeDays');
+  const categoriesContainer = document.getElementById('downtimeCategories');
+  
+  const activeDays = [];
+  if (daysContainer) {
+    daysContainer.querySelectorAll('.day-btn.active').forEach(btn => {
+      activeDays.push(parseInt(btn.dataset.day));
+    });
+  }
+  
+  const blockedCategories = [];
+  if (categoriesContainer) {
+    categoriesContainer.querySelectorAll('.downtime-category-chip.selected').forEach(chip => {
+      blockedCategories.push(chip.dataset.category);
+    });
+  }
+  
+  const settings = {
+    enabled: enabledToggle?.checked || false,
+    startTime: startInput?.value || '22:00',
+    endTime: endInput?.value || '07:00',
+    activeDays: activeDays,
+    blockedCategories: blockedCategories
+  };
+  
+  try {
+    await chrome.storage.local.set({ downtimeSettings: settings });
+    console.log('Downtime settings saved:', settings);
+  } catch (error) {
+    console.error('Error saving downtime settings:', error);
+  }
+}
+
+/**
+ * Populate downtime categories selection
+ */
+function populateDowntimeCategories(container, selectedCategories) {
+  // Categories that make sense to block during downtime
+  const blockableCategories = [
+    { id: 'social', icon: '💬', name: 'Social Media' },
+    { id: 'entertainment', icon: '🎬', name: 'Entertainment' },
+    { id: 'games', icon: '🎮', name: 'Games' },
+    { id: 'news', icon: '📰', name: 'News' },
+    { id: 'shopping', icon: '🛒', name: 'Shopping' },
+    { id: 'adult', icon: '🔞', name: 'Adult' }
+  ];
+  
+  container.innerHTML = blockableCategories.map(cat => {
+    const isSelected = selectedCategories.includes(cat.id);
+    return `
+      <div class="downtime-category-chip ${isSelected ? 'selected' : ''}" data-category="${cat.id}">
+        <span class="chip-icon">${cat.icon}</span>
+        <span class="chip-name">${cat.name}</span>
+      </div>
+    `;
+  }).join('');
+  
+  // Add click handlers
+  container.querySelectorAll('.downtime-category-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      chip.classList.toggle('selected');
+      saveDowntimeSettings();
+    });
+  });
+}
 
 // ============================================
 // Whitelist Mode
@@ -7893,14 +9430,14 @@ async function loadWhitelistSettings() {
     return result.whitelistSettings || {
       enabled: false,
       sites: [],
-      allowedCategories: ['workspace', 'education']
+      allowedCategories: ['productivity', 'education']
     };
   } catch (error) {
     console.error('Error loading whitelist settings:', error);
     return {
       enabled: false,
       sites: [],
-      allowedCategories: ['workspace', 'education']
+      allowedCategories: ['productivity', 'education']
     };
   }
 }
@@ -7981,7 +9518,7 @@ function renderWhitelistCategories(container, selectedCategories) {
   if (!container) return;
   
   const categories = [
-    { id: 'workspace', icon: '💼', name: 'Workspace' },
+    { id: 'productivity', icon: '💼', name: 'Productivity' },
     { id: 'education', icon: '📚', name: 'Education' },
     { id: 'news', icon: '📰', name: 'News' },
     { id: 'shopping', icon: '🛒', name: 'Shopping' },
@@ -8003,6 +9540,236 @@ function renderWhitelistCategories(container, selectedCategories) {
     chip.addEventListener('click', () => {
       chip.classList.toggle('selected');
       saveWhitelistSettings();
+    });
+  });
+}
+
+// ============================================
+// Downtime Page (Separate from Settings)
+// ============================================
+
+/**
+ * Load Downtime page with both Downtime and Whitelist settings
+ */
+async function loadDowntimePage() {
+  // Load Downtime settings
+  const downtimeSettings = await loadDowntimeSettings();
+  
+  // Downtime toggle
+  const enabledToggle = document.getElementById('downtimeEnabledPage');
+  const settingsCard = document.getElementById('downtimeSettingsCard');
+  if (enabledToggle) {
+    enabledToggle.checked = downtimeSettings.enabled;
+    settingsCard.style.opacity = downtimeSettings.enabled ? '1' : '0.6';
+    
+    enabledToggle.addEventListener('change', async () => {
+      const settings = await loadDowntimeSettings();
+      settings.enabled = enabledToggle.checked;
+      await chrome.storage.local.set({ downtimeSettings: settings });
+      settingsCard.style.opacity = enabledToggle.checked ? '1' : '0.6';
+    });
+  }
+  
+  // Start/End time
+  const startInput = document.getElementById('downtimeStartPage');
+  const endInput = document.getElementById('downtimeEndPage');
+  if (startInput) startInput.value = downtimeSettings.startTime;
+  if (endInput) endInput.value = downtimeSettings.endTime;
+  
+  startInput?.addEventListener('change', saveDowntimePageSettings);
+  endInput?.addEventListener('change', saveDowntimePageSettings);
+  
+  // Day buttons
+  const daysContainer = document.getElementById('downtimeDaysPage');
+  if (daysContainer) {
+    const dayBtns = daysContainer.querySelectorAll('.day-btn');
+    dayBtns.forEach(btn => {
+      const day = parseInt(btn.dataset.day);
+      if (downtimeSettings.activeDays.includes(day)) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+      
+      btn.addEventListener('click', () => {
+        btn.classList.toggle('active');
+        saveDowntimePageSettings();
+      });
+    });
+  }
+  
+  // Categories
+  const categoriesContainer = document.getElementById('downtimeCategoriesPage');
+  if (categoriesContainer) {
+    populateDowntimeCategories(categoriesContainer, downtimeSettings.blockedCategories);
+    // Re-bind save handler for page version
+    categoriesContainer.querySelectorAll('.downtime-category-chip').forEach(chip => {
+      chip.addEventListener('click', saveDowntimePageSettings);
+    });
+  }
+  
+  // Load Whitelist settings
+  const whitelistSettings = await loadWhitelistSettings();
+  
+  const whitelistToggle = document.getElementById('whitelistEnabledPage');
+  const whitelistOptions = document.getElementById('whitelistOptionsPage');
+  if (whitelistToggle) {
+    whitelistToggle.checked = whitelistSettings.enabled;
+    whitelistOptions.style.opacity = whitelistSettings.enabled ? '1' : '0.6';
+    
+    whitelistToggle.addEventListener('change', async () => {
+      const settings = await loadWhitelistSettings();
+      settings.enabled = whitelistToggle.checked;
+      await chrome.storage.local.set({ whitelistSettings: settings });
+      whitelistOptions.style.opacity = whitelistToggle.checked ? '1' : '0.6';
+    });
+  }
+  
+  // Whitelist sites
+  const sitesContainer = document.getElementById('whitelistSitesPage');
+  renderWhitelistSitesPage(sitesContainer, whitelistSettings.sites);
+  
+  // Whitelist categories
+  const whitelistCatsContainer = document.getElementById('whitelistCategoriesPage');
+  renderWhitelistCategoriesPage(whitelistCatsContainer, whitelistSettings.allowedCategories);
+  
+  // Add site button
+  const addBtn = document.getElementById('addWhitelistBtnPage');
+  const domainInput = document.getElementById('newWhitelistDomainPage');
+  
+  addBtn?.addEventListener('click', async () => {
+    const domain = domainInput.value.trim().toLowerCase();
+    if (!domain) return;
+    
+    if (!isValidDomain(domain)) {
+      alert('Please enter a valid domain (e.g., example.com)');
+      return;
+    }
+    
+    const settings = await loadWhitelistSettings();
+    if (!settings.sites.includes(domain)) {
+      settings.sites.push(domain);
+      await chrome.storage.local.set({ whitelistSettings: settings });
+      renderWhitelistSitesPage(sitesContainer, settings.sites);
+    }
+    
+    domainInput.value = '';
+  });
+  
+  domainInput?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') addBtn?.click();
+  });
+}
+
+/**
+ * Save downtime settings from page inputs
+ */
+async function saveDowntimePageSettings() {
+  const enabledToggle = document.getElementById('downtimeEnabledPage');
+  const startInput = document.getElementById('downtimeStartPage');
+  const endInput = document.getElementById('downtimeEndPage');
+  const daysContainer = document.getElementById('downtimeDaysPage');
+  const categoriesContainer = document.getElementById('downtimeCategoriesPage');
+  
+  const activeDays = [];
+  if (daysContainer) {
+    daysContainer.querySelectorAll('.day-btn.active').forEach(btn => {
+      activeDays.push(parseInt(btn.dataset.day));
+    });
+  }
+  
+  const blockedCategories = [];
+  if (categoriesContainer) {
+    categoriesContainer.querySelectorAll('.downtime-category-chip.selected').forEach(chip => {
+      blockedCategories.push(chip.dataset.category);
+    });
+  }
+  
+  const settings = {
+    enabled: enabledToggle?.checked || false,
+    startTime: startInput?.value || '22:00',
+    endTime: endInput?.value || '07:00',
+    activeDays: activeDays,
+    blockedCategories: blockedCategories
+  };
+  
+  await chrome.storage.local.set({ downtimeSettings: settings });
+}
+
+/**
+ * Render whitelist sites for page
+ */
+function renderWhitelistSitesPage(container, sites) {
+  if (!container) return;
+  
+  if (!sites || sites.length === 0) {
+    container.innerHTML = '<div class="whitelist-empty">No sites added yet. Add domains below.</div>';
+    return;
+  }
+  
+  container.innerHTML = sites.map(domain => `
+    <div class="whitelist-site-item" data-domain="${domain}">
+      <div class="whitelist-site-domain">
+        <img src="https://icons.duckduckgo.com/ip3/${domain}.ico" alt="" onerror="this.src='https://www.google.com/s2/favicons?domain=${domain}&sz=32'">
+        <span>${domain}</span>
+      </div>
+      <button class="whitelist-site-delete" data-domain="${domain}">✕</button>
+    </div>
+  `).join('');
+  
+  // Add delete handlers
+  container.querySelectorAll('.whitelist-site-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const domain = btn.dataset.domain;
+      const settings = await loadWhitelistSettings();
+      settings.sites = settings.sites.filter(s => s !== domain);
+      await chrome.storage.local.set({ whitelistSettings: settings });
+      renderWhitelistSitesPage(container, settings.sites);
+    });
+  });
+}
+
+/**
+ * Render whitelist categories for page
+ */
+function renderWhitelistCategoriesPage(container, selectedCategories) {
+  if (!container) return;
+  
+  const categories = [
+    { id: 'productivity', icon: '💼', name: 'Productivity' },
+    { id: 'education', icon: '📚', name: 'Education' },
+    { id: 'news', icon: '📰', name: 'News' },
+    { id: 'shopping', icon: '🛒', name: 'Shopping' },
+    { id: 'other', icon: '📱', name: 'Other' }
+  ];
+  
+  container.innerHTML = categories.map(cat => {
+    const isSelected = selectedCategories.includes(cat.id);
+    return `
+      <div class="whitelist-category-chip ${isSelected ? 'selected' : ''}" data-category="${cat.id}">
+        <span class="chip-icon">${cat.icon}</span>
+        <span class="chip-name">${cat.name}</span>
+      </div>
+    `;
+  }).join('');
+  
+  // Add click handlers
+  container.querySelectorAll('.whitelist-category-chip').forEach(chip => {
+    chip.addEventListener('click', async () => {
+      chip.classList.toggle('selected');
+
+      const settings = await loadWhitelistSettings();
+      const category = chip.dataset.category;
+
+      if (chip.classList.contains('selected')) {
+        if (!settings.allowedCategories.includes(category)) {
+          settings.allowedCategories.push(category);
+        }
+      } else {
+        settings.allowedCategories = settings.allowedCategories.filter(c => c !== category);
+      }
+
+      await chrome.storage.local.set({ whitelistSettings: settings });
     });
   });
 }
@@ -8136,1179 +9903,3 @@ if (document.readyState === 'loading') {
 } else {
   startServerStatusMonitoring();
 }
-
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  MOCKUP MODE — START                                       ║
-// ║  To remove mockup feature:                                 ║
-// ║  1. Delete this entire block (to MOCKUP MODE — END)        ║
-// ║  2. Delete dashboard/mockup.css & mockup HTML in .html     ║
-// ║  3. Search [MOCKUP] comments above and clean up            ║
-// ╚══════════════════════════════════════════════════════════════╝
-
-let mockupModeActive = false;
-let _mockTodayStats = null;
-let _mockWeekData = null;
-let _mockSessions = null;
-let originalSendMessage = null;
-
-/**
- * Generate realistic mock data for business plan mockups
- * KEY FEATURE: Same domains appear in DIFFERENT categories based on context
- * e.g., youtube.com → Entertainment (music videos) AND Learning (tutorials)
- */
-function generateMockData() {
-  const today = getTodayDate();
-
-  // Session definitions - KEY: same domain, different categories
-  // This showcases deTime's intelligent context-aware classification
-  const sessionDefs = [
-    // Morning: Productivity block
-    { domain: 'github.com', cat: 'workspace', dur: 3600000, title: 'GitHub - Pull Request Review' },        // 1h
-    { domain: 'youtube.com', cat: 'education', dur: 4200000, title: 'YouTube - React 19 New Features Tutorial' }, // 1h10m ★ youtube = education (TOP)
-    { domain: 'github.com', cat: 'workspace', dur: 2400000, title: 'GitHub - Code Review' },                // 40m
-    { domain: 'notion.so', cat: 'workspace', dur: 2700000, title: 'Notion - Product Roadmap' },             // 45m
-
-    // Mid-morning break
-    { domain: 'reddit.com', cat: 'news', dur: 1500000, title: 'Reddit - r/technology' },                        // 25m ★ reddit = news
-    { domain: 'youtube.com', cat: 'entertainment', dur: 1200000, title: 'YouTube - Daily Dose of Internet' },   // 20m ★ youtube = entertainment (LOW)
-
-    // Focused learning block
-    { domain: 'coursera.org', cat: 'education', dur: 3600000, title: 'Coursera - Machine Learning Specialization' }, // 1h
-    { domain: 'reddit.com', cat: 'education', dur: 1800000, title: 'Reddit - r/MachineLearning' },              // 30m ★ reddit = education
-
-    // Afternoon: Work
-    { domain: 'figma.com', cat: 'workspace', dur: 3000000, title: 'Figma - Dashboard Redesign' },           // 50m
-    { domain: 'github.com', cat: 'workspace', dur: 2700000, title: 'GitHub - Feature Branch Push' },        // 45m
-    { domain: 'youtube.com', cat: 'workspace', dur: 3600000, title: 'YouTube - Lo-Fi Study Music' },        // 1h ★ youtube = workspace (STUDY MUSIC - HIGH)
-
-    // Afternoon break
-    { domain: 'twitter.com', cat: 'social', dur: 1500000, title: 'X - Timeline' },                              // 25m
-    { domain: 'reddit.com', cat: 'social', dur: 1200000, title: 'Reddit - r/funny, r/pics' },                  // 20m ★ reddit = social
-
-    // Evening: Mixed
-    { domain: 'netflix.com', cat: 'entertainment', dur: 2400000, title: 'Netflix - Black Mirror S7' },         // 40m
-  ];
-
-  // Build sessions and aggregate stats
-  const sessions = [];
-  const categories = {};
-  const domains = {};
-  let totalTime = 0;
-  const baseTime = new Date(today + 'T08:30:00').getTime();
-  let sessionTime = baseTime;
-
-  for (const def of sessionDefs) {
-    const gap = 60000 + Math.random() * 240000; // 1-5 min gap
-    sessionTime += gap;
-
-    sessions.push({
-      id: `mock-${sessions.length}`,
-      date: today,
-      startTime: sessionTime,
-      endTime: sessionTime + def.dur,
-      duration: def.dur,
-      category: def.cat,
-      visits: [{
-        url: `https://${def.domain}/`,
-        domain: def.domain,
-        title: def.title,
-        time: sessionTime,
-        duration: def.dur
-      }]
-    });
-    sessionTime += def.dur;
-
-    // Aggregate into categories
-    if (!categories[def.cat]) {
-      categories[def.cat] = { time: 0, sessionCount: 0, visits: 0, topSites: [] };
-    }
-    categories[def.cat].time += def.dur;
-    categories[def.cat].visits += 1;
-    categories[def.cat].sessionCount += 1;
-
-    // Track domain time per category for topSites
-    const existing = categories[def.cat].topSites.find(s => s.domain === def.domain);
-    if (existing) {
-      existing.time += def.dur;
-      existing.visits += 1;
-    } else {
-      categories[def.cat].topSites.push({ domain: def.domain, time: def.dur, visits: 1 });
-    }
-
-    // Domain aggregation (uses primary/first category seen)
-    if (!domains[def.domain]) {
-      domains[def.domain] = { time: 0, category: def.cat };
-    }
-    domains[def.domain].time += def.dur;
-    totalTime += def.dur;
-  }
-
-  // Sort topSites
-  for (const cat of Object.values(categories)) {
-    cat.topSites.sort((a, b) => b.time - a.time);
-  }
-
-  const todayStats = {
-    date: today,
-    totalTime: totalTime,
-    pickups: 16,
-    sessions: sessions.length,
-    categories: categories,
-    domains: domains,
-    longestSession: 3600000
-  };
-
-  // Generate 7 days of week data with realistic variation
-  const weekData = [];
-  const dayMultipliers = [0.75, 0.9, 1.0, 0.85, 1.05, 0.55, 0.45];
-  const todayObj = new Date(today);
-  const dayOfWeek = (todayObj.getDay() - weekStartDay + 7) % 7;
-
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(todayObj);
-    d.setDate(d.getDate() - dayOfWeek + i);
-    const dateStr = formatDateLocal(d);
-    const mult = dayMultipliers[i];
-    const dayCategories = {};
-
-    for (const [cat, data] of Object.entries(categories)) {
-      dayCategories[cat] = {
-        time: Math.round(data.time * mult * (0.8 + Math.random() * 0.4)),
-        sessionCount: Math.round(data.sessionCount * mult),
-        visits: Math.round(data.visits * mult),
-        topSites: data.topSites.map(s => ({
-          ...s,
-          time: Math.round(s.time * mult * (0.8 + Math.random() * 0.4))
-        }))
-      };
-    }
-
-    const dayTotal = Object.values(dayCategories).reduce((s, c) => s + c.time, 0);
-    weekData.push({
-      date: dateStr,
-      totalTime: dayTotal,
-      categories: dayCategories,
-      sessions: Math.round(sessions.length * mult),
-      pickups: Math.round(16 * mult)
-    });
-  }
-
-  // Mock goals data - matches getGoalTypeInfo types
-  const mockGoals = [
-    {
-      type: 'productive',
-      frequency: 'daily',
-      comparison: 'min',
-      targetTime: 14400000, // 4h productive
-      activeDays: [0, 1, 2, 3, 4, 5, 6],
-      history: {}
-    },
-    {
-      type: 'limit_unproductive',
-      frequency: 'daily',
-      comparison: 'max',
-      targetTime: 7200000, // 2h unproductive limit
-      activeDays: [0, 1, 2, 3, 4, 5, 6],
-      history: {}
-    }
-  ];
-
-  return { todayStats, sessions, weekData, categories, domains, mockGoals };
-}
-
-/**
- * Intercept chrome.runtime.sendMessage to return mock data
- */
-function enableMockData() {
-  if (mockupModeActive) return;
-  mockupModeActive = true;
-
-  const mockData = generateMockData();
-  _mockTodayStats = mockData.todayStats;
-  _mockWeekData = mockData.weekData;
-  _mockSessions = mockData.sessions;
-  originalSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
-
-  chrome.runtime.sendMessage = function(message, ...args) {
-    // Return a promise that resolves with mock data
-    const type = message?.type;
-
-    if (type === 'GET_TODAY_STATS') {
-      return Promise.resolve({ success: true, data: mockData.todayStats });
-    }
-
-    if (type === 'GET_DATE_STATS') {
-      const requestDate = message.date;
-      const found = mockData.weekData.find(d => d.date === requestDate);
-      if (found) {
-        // Generate sessions for that day
-        const daySessions = mockData.sessions.map(s => ({
-          ...s,
-          date: requestDate,
-          id: `mock-${requestDate}-${Math.random().toString(36).substr(2, 6)}`
-        }));
-        return Promise.resolve({
-          success: true,
-          data: { stats: found, sessions: daySessions }
-        });
-      }
-      // For any other date, return lighter data
-      return Promise.resolve({
-        success: true,
-        data: {
-          stats: {
-            date: requestDate,
-            totalTime: Math.round(mockData.todayStats.totalTime * (0.5 + Math.random() * 0.5)),
-            categories: mockData.todayStats.categories,
-            domains: mockData.todayStats.domains,
-            pickups: Math.round(10 + Math.random() * 8)
-          },
-          sessions: mockData.sessions.slice(0, 15)
-        }
-      });
-    }
-
-    if (type === 'GET_CATEGORIES') {
-      // Pass through, then ensure 'education' key exists (mock data uses it)
-      return originalSendMessage(message, ...args).then(response => {
-        if (response?.data && !response.data.education) {
-          // Copy learning category as education for mock data compatibility
-          response.data.education = response.data.learning
-            ? { ...response.data.learning, name: 'Learning' }
-            : { name: 'Learning', icon: '📚', color: '#A3D8F4', domains: [], keywords: [] };
-        }
-        return response;
-      });
-    }
-
-    if (type === 'GET_SETTINGS') {
-      // Inject mock goals into real settings
-      return originalSendMessage(message, ...args).then(response => {
-        const data = response?.data || {};
-        data.goals = mockData.mockGoals;
-        return { success: true, data };
-      });
-    }
-
-    if (type === 'GET_CURRENT_SESSION') {
-      return Promise.resolve({
-        success: true,
-        data: {
-          session: {
-            domain: 'github.com',
-            category: 'workspace',
-            startTime: Date.now() - 1200000,
-            duration: 1200000,
-            visits: [{
-              url: 'https://github.com/',
-              domain: 'github.com',
-              title: 'GitHub - Feature Branch',
-              time: Date.now() - 1200000,
-              duration: 1200000
-            }]
-          }
-        }
-      });
-    }
-
-    if (type === 'GET_SYNC_STATUS') {
-      return Promise.resolve({
-        success: true,
-        data: { nextSyncTime: Date.now() + 1800000 }
-      });
-    }
-
-    if (type === 'GET_WEEKLY_STATS') {
-      // Aggregate week data for goals
-      const weeklyCategories = {};
-      mockData.weekData.forEach(day => {
-        Object.entries(day.categories || {}).forEach(([cat, data]) => {
-          if (!weeklyCategories[cat]) weeklyCategories[cat] = { time: 0 };
-          weeklyCategories[cat].time += data.time;
-        });
-      });
-      return Promise.resolve({
-        success: true,
-        data: { weeklyCategories, totalTime: mockData.weekData.reduce((s, d) => s + d.totalTime, 0) }
-      });
-    }
-
-    if (type === 'GET_LIMITS' || type === 'GET_DOMAIN_CATEGORY') {
-      return originalSendMessage(message, ...args);
-    }
-
-    // Default: pass through
-    return originalSendMessage(message, ...args);
-  };
-
-  // Inject mock goals into global goals array
-  goals = mockData.mockGoals;
-
-  // Override productive color to match CSS prod-dot (#007AFF blue)
-  PRODUCTIVITY_GROUPS.productive.color = '#007AFF';
-  document.documentElement.style.setProperty('--productive-color', '#007AFF');
-
-  document.body.classList.add('mockup-data-active');
-
-  // Show mockup-only elements (goals sections)
-  document.querySelectorAll('.mockup-only').forEach(el => el.classList.remove('hidden'));
-
-  console.log('[Mockup] Mock data enabled');
-}
-
-/**
- * Apply mock layout inline styles (must be called after DOM rebuild)
- */
-function applyMockLayout() {
-  document.querySelectorAll('.category-cell').forEach(el => {
-    el.style.cssText = 'display:flex !important; flex-direction:row !important; flex-wrap:nowrap !important; gap:18px; align-items:stretch; overflow:visible; margin-left:16px;';
-  });
-  document.querySelectorAll('.productivity-section').forEach(el => {
-    el.style.cssText = 'flex:0 0 140px !important; max-width:140px; min-width:140px; margin:0;';
-  });
-  document.querySelectorAll('.categories-section').forEach(el => {
-    el.style.cssText = 'flex:1 1 0% !important; min-width:0; overflow:visible; border-top:none; border-left:1px solid var(--border); padding-left:12px; padding-top:10px; margin-top:0;';
-  });
-}
-
-/**
- * AI Insights — mockup only
- * 3 charts: (1) 4주 시간대별 집중력 곡선, (2) 사용 전후 비교, (3) 이탈 경로 분석
- */
-
-let _aiInsightsData = null;
-
-function computeAIInsightsData() {
-  const stats = _mockTodayStats;
-  const weekData = _mockWeekData;
-  if (!stats || !weekData) return null;
-
-  const sessions = _mockSessions || [];
-  const categories = stats.categories || {};
-  const totalTime = stats.totalTime || 0;
-  const productiveCats = ['workspace', 'education'];
-  const unproductiveCats = ['social', 'entertainment', 'games'];
-
-  // --- Today metrics ---
-  let productiveTime = 0, unproductiveTime = 0;
-  for (const [cat, d] of Object.entries(categories)) {
-    if (productiveCats.includes(cat)) productiveTime += d.time;
-    else if (unproductiveCats.includes(cat)) unproductiveTime += d.time;
-  }
-  const prodRatio = totalTime > 0 ? productiveTime / totalTime : 0;
-
-  // Hourly focus (today, 6AM-1AM = 20 slots)
-  const hourlyProd = {};
-  for (let h = 6; h <= 25; h++) hourlyProd[h] = { productive: 0, total: 0 };
-  for (const s of sessions) {
-    const hour = new Date(s.startTime).getHours();
-    const key = hour < 6 ? hour + 24 : hour; // 0-5 AM → 24-29
-    if (key < 6 || key > 25) continue;
-    hourlyProd[key].total += s.duration;
-    if (productiveCats.includes(s.category)) hourlyProd[key].productive += s.duration;
-  }
-
-  // Longest productive streak
-  const prodSessions = sessions.filter(s => productiveCats.includes(s.category));
-  let deepWork = 0, streak = 0;
-  for (let i = 0; i < prodSessions.length; i++) {
-    if (i > 0 && (prodSessions[i].startTime - prodSessions[i-1].endTime) < 600000) {
-      streak += prodSessions[i].duration;
-    } else { streak = prodSessions[i].duration; }
-    deepWork = Math.max(deepWork, streak);
-  }
-
-  // Longest distraction streak
-  const unprodSessions = sessions.filter(s => unproductiveCats.includes(s.category));
-  let longestDistraction = 0, dStreak = 0;
-  for (let i = 0; i < unprodSessions.length; i++) {
-    if (i > 0 && (unprodSessions[i].startTime - unprodSessions[i-1].endTime) < 600000) {
-      dStreak += unprodSessions[i].duration;
-    } else { dStreak = unprodSessions[i].duration; }
-    longestDistraction = Math.max(longestDistraction, dStreak);
-  }
-
-  // Context switches
-  let switches = 0;
-  for (let i = 1; i < sessions.length; i++) {
-    if (sessions[i].category !== sessions[i-1].category) switches++;
-  }
-
-  // --- Chart 1: 4주 평균 시간대별 집중력 (6AM-1AM, 20 slots) ---
-  // Realistic pattern: morning ramp → peak 10-12 → post-lunch dip → afternoon → evening decline → 11PM+ cliff
-  const avg4wFocus = [
-    // 6AM  7AM  8AM  9AM  10AM 11AM 12PM 1PM  2PM  3PM  4PM  5PM  6PM  7PM  8PM  9PM  10PM 11PM 12AM 1AM
-       12,  25,  48,  68,   85,  88,  72,  45,  52,  65,  70,  58,  42,  35,  28,  22,  18,  10,   5,   3
-  ];
-  // Today's actual hourly focus (same 20 slots)
-  const todayFocus = [];
-  for (let h = 6; h <= 25; h++) {
-    const slot = hourlyProd[h];
-    todayFocus.push(slot.total > 0 ? Math.round((slot.productive / slot.total) * 100) : 0);
-  }
-  const focusHours = [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]; // 24=12AM, 25=1AM
-
-  // --- Chart 2: 사용 전후 비교 (Before/After deTime) ---
-  // "Before" = synthetic worse data (user before installing)
-  // "After" = current 4-week average (improvement after using deTime)
-  const beforeAfter = {
-    prodHours:     { before: 2.1,  after: 4.3,  label: '일일 집중 시간',       unit: '시간' },
-    distractMin:   { before: 145,  after: 62,   label: '일일 이탈 시간',       unit: '분' },
-    switches:      { before: 18,   after: 9,    label: '일일 작업 전환',       unit: '회' },
-  };
-
-  // --- Chart 3: 이탈 경로 분석 ---
-  // Analyze session transitions: productive → which unproductive site/category
-  const distractionPaths = [];
-  for (let i = 1; i < sessions.length; i++) {
-    const prev = sessions[i - 1];
-    const curr = sessions[i];
-    if (productiveCats.includes(prev.category) && unproductiveCats.includes(curr.category)) {
-      // Track the full distraction chain
-      const chain = [{ domain: prev.visits?.[0]?.domain || prev.category, cat: prev.category }];
-      for (let j = i; j < sessions.length && !productiveCats.includes(sessions[j].category); j++) {
-        chain.push({
-          domain: sessions[j].visits?.[0]?.domain || sessions[j].category,
-          cat: sessions[j].category,
-          duration: sessions[j].duration
-        });
-      }
-      if (chain.length >= 2) {
-        distractionPaths.push(chain);
-      }
-    }
-  }
-  // Find most common entry point and total time per distraction domain
-  const distractByDomain = {};
-  for (const path of distractionPaths) {
-    for (let k = 1; k < path.length; k++) {
-      const d = path[k].domain;
-      if (!distractByDomain[d]) distractByDomain[d] = { count: 0, totalMs: 0, isEntry: 0 };
-      distractByDomain[d].count++;
-      distractByDomain[d].totalMs += path[k].duration || 0;
-      if (k === 1) distractByDomain[d].isEntry++;
-    }
-  }
-  // Sort by total time
-  const topDistractors = Object.entries(distractByDomain)
-    .sort((a, b) => b[1].totalMs - a[1].totalMs)
-    .slice(0, 5)
-    .map(([domain, info]) => ({ domain, ...info }));
-
-  // Average total distraction chain time
-  const avgChainTime = distractionPaths.length > 0
-    ? distractionPaths.reduce((s, p) => s + p.slice(1).reduce((t, n) => t + (n.duration || 0), 0), 0) / distractionPaths.length
-    : 0;
-
-  // Top entry distractor
-  const topEntry = topDistractors.reduce((a, b) => b.isEntry > a.isEntry ? b : a, topDistractors[0] || { domain: '-', isEntry: 0 });
-  const entryPct = distractionPaths.length > 0 ? Math.round((topEntry.isEntry / distractionPaths.length) * 100) : 0;
-
-  // Focus score
-  const avgSessionLen = sessions.length > 0 ? totalTime / sessions.length : 0;
-  const focusScore = Math.round(prodRatio * 60 + Math.min(avgSessionLen / 3600000, 1) * 25 + 15);
-
-  return {
-    // Chart 1
-    avg4wFocus, todayFocus, focusHours, hourlyProd,
-    // Chart 2
-    beforeAfter,
-    // Chart 3
-    distractionPaths, topDistractors, avgChainTime, topEntry, entryPct,
-    // Metrics
-    productiveTime, unproductiveTime, totalTime, prodRatio,
-    deepWork, longestDistraction, switches, focusScore,
-  };
-}
-
-function drawAIInsightsCharts() {
-  _aiInsightsData = computeAIInsightsData();
-  if (!_aiInsightsData) return;
-  populateAIComments();
-  drawFocusTimelineChart();
-  drawBeforeAfterChart();
-  drawDistractionFlowChart();
-  populateAIMetrics();
-  populateCategoryBreakdown();
-}
-
-// Helper: setup AI canvas with proper DPR scaling
-function setupAICanvas(canvas, height) {
-  const dpr = window.devicePixelRatio || 1;
-  // Measure from the CARD's actual rendered width (most reliable)
-  const card = canvas.closest('.ai-chart-card');
-  const cardRect = card.getBoundingClientRect();
-  const cardStyle = getComputedStyle(card);
-  const padL = parseFloat(cardStyle.paddingLeft) || 0;
-  const padR = parseFloat(cardStyle.paddingRight) || 0;
-  const w = Math.floor(cardRect.width - padL - padR) || 300;
-  const h = height;
-  // Set pixel buffer
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  // Lock display size to exact measured width
-  canvas.style.cssText = `display:block; width:${w}px; height:${h}px;`;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  return { ctx, w, h };
-}
-
-// ─── AI Comments ─────────────────────────────────────────────
-function populateAIComments() {
-  const d = _aiInsightsData;
-  const fmtMs = (ms) => {
-    const h = Math.floor(ms / 3600000);
-    const m = Math.round((ms % 3600000) / 60000);
-    return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
-  };
-
-  // Chart 1: 시간대별 집중력 — 11시 이후 급락 패턴 강조
-  const focusEl = document.getElementById('aiFocusComment');
-  if (focusEl) {
-    // Find when focus drops below 20% (evening cliff)
-    const avg = d.avg4wFocus;
-    let cliffHour = 23;
-    for (let i = avg.length - 1; i >= 0; i--) {
-      if (avg[i] >= 20) { cliffHour = d.focusHours[i]; break; }
-    }
-    const peakIdx = avg.indexOf(Math.max(...avg));
-    const peakHour = d.focusHours[peakIdx];
-    const peakAmpm = peakHour >= 12 ? '오후' : '오전';
-    const peakHrStr = peakHour > 12 ? peakHour - 12 : peakHour;
-    const cliffStr = cliffHour > 12 ? `오후 ${cliffHour - 12}시` : `오전 ${cliffHour}시`;
-    const dropPct = avg[peakIdx] > 0 ? Math.round((1 - avg[avg.length - 3] / avg[peakIdx]) * 100) : 0;
-
-    focusEl.innerHTML = `<span class="ai-label">AI</span>골든타임은 <span class="ai-highlight">${peakAmpm} ${peakHrStr}시</span>(${avg[peakIdx]}%). <span class="ai-highlight">${cliffStr} 이후 ${dropPct}% 급락</span> — 11시 이후 화면 차단 추천.`;
-  }
-
-  // Chart 2: 사용 전후 비교
-  const hourlyEl = document.getElementById('aiHourlyComment');
-  if (hourlyEl) {
-    const ba = d.beforeAfter;
-    const prodImprove = Math.round(((ba.prodHours.after - ba.prodHours.before) / ba.prodHours.before) * 100);
-    const distractReduce = Math.round(((ba.distractMin.before - ba.distractMin.after) / ba.distractMin.before) * 100);
-    const switchReduce = Math.round(((ba.switches.before - ba.switches.after) / ba.switches.before) * 100);
-
-    hourlyEl.innerHTML = `<span class="ai-label">AI</span>4주 후 집중 <span class="ai-highlight">+${prodImprove}%</span>, 이탈 <span class="ai-highlight">-${distractReduce}%</span>, 전환 <span class="ai-highlight">-${switchReduce}%</span>. 패턴 인식만으로 행동이 변해요.`;
-  }
-
-  // Chart 3: 이탈 경로
-  const weeklyEl = document.getElementById('aiWeeklyComment');
-  if (weeklyEl) {
-    const topD = d.topEntry?.domain || 'youtube.com';
-    const pct = d.entryPct || 67;
-    const chainMin = Math.round(d.avgChainTime / 60000);
-    const paths = d.distractionPaths?.length || 0;
-
-    // Build most common path description
-    let pathDesc = '';
-    if (d.distractionPaths && d.distractionPaths.length > 0) {
-      const longest = d.distractionPaths.reduce((a, b) => b.length > a.length ? b : a, d.distractionPaths[0]);
-      pathDesc = longest.map(n => n.domain).join(' → ');
-    }
-
-    weeklyEl.innerHTML = `<span class="ai-label">AI</span>이탈 <span class="ai-highlight">${pct}%</span>가 <span class="ai-highlight">${topD}</span>에서 시작. 평균 복귀 <span class="ai-highlight">${chainMin}분</span> — ${topD} 시간제한 추천.`;
-  }
-}
-
-// ─── Chart 1: 4주 평균 시간대별 집중력 곡선 (6AM-1AM) ─────────────
-// ─── Chart 1: 시간대별 집중력 (6AM-1AM) ───────────────────────────
-function drawFocusTimelineChart() {
-  const canvas = document.getElementById('aiFocusChart');
-  if (!canvas) return;
-  const d = _aiInsightsData;
-  const { ctx, w, h } = setupAICanvas(canvas, 110);
-
-  const avg = d.avg4wFocus;
-  const today = d.todayFocus;
-  const hours = d.focusHours;
-  const n = avg.length;
-
-  const padL = 36, padR = 12, padT = 18, padB = 22;
-  const chartW = w - padL - padR, chartH = h - padT - padB;
-  const cs = getComputedStyle(document.documentElement);
-  const textColor = cs.getPropertyValue('--text-tertiary').trim() || '#999';
-  const textMain = cs.getPropertyValue('--text-secondary').trim() || '#666';
-  const gridColor = cs.getPropertyValue('--border-light').trim() || '#eee';
-
-  const xScale = (i) => padL + (i / (n - 1)) * chartW;
-  const yScale = (v) => padT + (1 - v / 100) * chartH;
-
-  // Grid
-  ctx.strokeStyle = gridColor; ctx.lineWidth = 0.5;
-  [25, 50, 75].forEach(v => { ctx.beginPath(); ctx.moveTo(padL, yScale(v)); ctx.lineTo(w - padR, yScale(v)); ctx.stroke(); });
-
-  // Y labels
-  ctx.fillStyle = textColor; ctx.font = '9px -apple-system, sans-serif'; ctx.textAlign = 'right';
-  [0, 50, 100].forEach(v => ctx.fillText(v + '%', padL - 5, yScale(v) + 3));
-
-  // X labels — Korean style
-  ctx.textAlign = 'center'; ctx.font = '9px -apple-system, sans-serif';
-  const xLabels = [
-    { hr: 6, lbl: '6시' }, { hr: 9, lbl: '9시' }, { hr: 12, lbl: '12시' },
-    { hr: 15, lbl: '15시' }, { hr: 18, lbl: '18시' }, { hr: 21, lbl: '21시' }, { hr: 24, lbl: '0시' }
-  ];
-  xLabels.forEach(({ hr, lbl }) => {
-    const idx = hours.indexOf(hr);
-    if (idx < 0) return;
-    ctx.fillStyle = hr >= 23 ? '#FF3B30' : textColor;
-    ctx.fillText(lbl, xScale(idx), h - 6);
-  });
-
-  // 11PM+ danger zone
-  const zoneIdx = hours.indexOf(23);
-  if (zoneIdx >= 0) {
-    const grad = ctx.createLinearGradient(0, padT, 0, padT + chartH);
-    grad.addColorStop(0, 'rgba(255, 59, 48, 0.10)');
-    grad.addColorStop(1, 'rgba(255, 59, 48, 0.02)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(xScale(zoneIdx), padT, xScale(n - 1) - xScale(zoneIdx), chartH);
-    ctx.fillStyle = '#FF3B30';
-    ctx.globalAlpha = 0.6;
-    ctx.font = 'bold 9px -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('집중력 급락', (xScale(zoneIdx) + xScale(n - 1)) / 2, padT + 12);
-    ctx.globalAlpha = 1;
-  }
-
-  // Bezier helper
-  function drawCurve(data, color, lw, dash, areaColor) {
-    ctx.setLineDash(dash || []);
-    if (areaColor) {
-      const ag = ctx.createLinearGradient(0, padT, 0, padT + chartH);
-      ag.addColorStop(0, areaColor);
-      ag.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.beginPath(); ctx.moveTo(xScale(0), yScale(data[0]));
-      for (let i = 1; i < data.length; i++) {
-        const x0 = xScale(i-1), y0 = yScale(data[i-1]), x1 = xScale(i), y1 = yScale(data[i]);
-        ctx.bezierCurveTo((x0+x1)/2, y0, (x0+x1)/2, y1, x1, y1);
-      }
-      ctx.lineTo(xScale(data.length-1), padT+chartH); ctx.lineTo(xScale(0), padT+chartH);
-      ctx.closePath(); ctx.fillStyle = ag; ctx.fill();
-    }
-    ctx.beginPath(); ctx.moveTo(xScale(0), yScale(data[0]));
-    for (let i = 1; i < data.length; i++) {
-      const x0 = xScale(i-1), y0 = yScale(data[i-1]), x1 = xScale(i), y1 = yScale(data[i]);
-      ctx.bezierCurveTo((x0+x1)/2, y0, (x0+x1)/2, y1, x1, y1);
-    }
-    ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // 4주 평균 (solid, area fill)
-  drawCurve(avg, '#007AFF', 2.5, null, 'rgba(0,122,255,0.10)');
-
-  // 오늘 (dashed orange)
-  const hasToday = today.some(v => v > 0);
-  if (hasToday) drawCurve(today, '#FF9500', 1.8, [5, 3], null);
-
-  // Peak marker + label
-  const peakIdx = avg.indexOf(Math.max(...avg));
-  ctx.beginPath(); ctx.arc(xScale(peakIdx), yScale(avg[peakIdx]), 4, 0, Math.PI*2);
-  ctx.fillStyle = '#34C759'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-  // Peak label: position above if room, below if too close to top
-  const peakY = yScale(avg[peakIdx]);
-  const peakLabelY = peakY - 7 < padT ? peakY + 14 : peakY - 7;
-  ctx.fillStyle = '#34C759'; ctx.font = 'bold 9px -apple-system, sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText(`${avg[peakIdx]}%`, xScale(peakIdx), peakLabelY);
-
-  // Drop marker + label
-  if (zoneIdx >= 0) {
-    ctx.beginPath(); ctx.arc(xScale(zoneIdx), yScale(avg[zoneIdx]), 4, 0, Math.PI*2);
-    ctx.fillStyle = '#FF3B30'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-    const dropY = yScale(avg[zoneIdx]);
-    const dropLabelY = dropY + 14 > padT + chartH ? dropY - 7 : dropY + 14;
-    ctx.fillStyle = '#FF3B30'; ctx.font = 'bold 9px -apple-system, sans-serif';
-    ctx.fillText(`${avg[zoneIdx]}%`, xScale(zoneIdx), dropLabelY);
-  }
-
-  // Legend (top-right)
-  const lx = w - padR - 115;
-  ctx.setLineDash([]);
-  ctx.beginPath(); ctx.moveTo(lx, 8); ctx.lineTo(lx+16, 8); ctx.strokeStyle = '#007AFF'; ctx.lineWidth = 2.5; ctx.stroke();
-  ctx.fillStyle = textMain; ctx.font = '9px -apple-system, sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText('4주 평균', lx+19, 11);
-  if (hasToday) {
-    ctx.beginPath(); ctx.moveTo(lx+62, 8); ctx.lineTo(lx+78, 8); ctx.strokeStyle = '#FF9500'; ctx.setLineDash([4,3]); ctx.lineWidth = 1.8; ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillText('오늘', lx+81, 11);
-  }
-}
-
-// ─── Chart 2: deTime 사용 전후 비교 ──────────────────────────────
-function drawBeforeAfterChart() {
-  const canvas = document.getElementById('aiHourlyChart');
-  if (!canvas) return;
-  const d = _aiInsightsData;
-  const { ctx, w, h } = setupAICanvas(canvas, 140);
-
-  const ba = d.beforeAfter;
-  const items = Object.values(ba);
-  const n = items.length;
-  const padL = 8, padR = 8, padT = 18, padB = 8;
-  const usableH = h - padT - padB;
-  const rowH = usableH / n;          // ~38.5px per row
-  const cs = getComputedStyle(document.documentElement);
-  const textColor = cs.getPropertyValue('--text-tertiary').trim() || '#999';
-  const textMain = cs.getPropertyValue('--text').trim() || '#333';
-
-  // Layout: [label] then bars below label (stacked vertically, not side-by-side)
-  const badgeW = 52;
-  const badgeGap = 8;  // gap between value text and badge
-  const barMaxW = w - padL - padR - badgeW - badgeGap - 50;  // reserve space for value text + badge
-
-  // Legend row
-  ctx.font = '9px -apple-system, sans-serif'; ctx.textAlign = 'left';
-  ctx.fillStyle = 'rgba(180,180,180,0.6)'; ctx.fillRect(padL, 4, 10, 5);
-  ctx.fillStyle = textColor; ctx.fillText('사용 전', padL + 13, 9);
-  ctx.fillStyle = '#007AFF'; ctx.fillRect(padL + 48, 4, 10, 5);
-  ctx.fillStyle = textColor; ctx.fillText('사용 4주 후', padL + 61, 9);
-
-  const badgeX = w - padR - badgeW;
-
-  items.forEach((item, i) => {
-    const y = padT + i * rowH;
-    const barH = 7;
-    const globalMax = Math.max(item.before, item.after, 1);
-    const bw = Math.max(4, (item.before / globalMax) * barMaxW);
-    const aw = Math.max(4, (item.after / globalMax) * barMaxW);
-    const r = barH / 2;
-    const isReduction = item.label.includes('이탈') || item.label.includes('전환');
-
-    // Row label (above bars)
-    ctx.fillStyle = textMain; ctx.font = '10px -apple-system, sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(item.label, padL, y + 9);
-
-    // Before bar
-    const by = y + 13;
-    ctx.fillStyle = 'rgba(180, 180, 180, 0.3)';
-    ctx.beginPath(); ctx.roundRect(padL, by, bw, barH, r); ctx.fill();
-    ctx.fillStyle = textColor; ctx.font = '8px -apple-system, sans-serif';
-    const beforeText = `${item.before}${item.unit}`;
-    const beforeTextX = padL + bw + 4;
-    // Only draw if it won't overlap the badge
-    if (beforeTextX + ctx.measureText(beforeText).width < badgeX - 4) {
-      ctx.fillText(beforeText, beforeTextX, by + barH - 1);
-    }
-
-    // After bar
-    const ay = by + barH + 2;
-    const afterColor = isReduction
-      ? (item.after < item.before ? '#34C759' : '#FF6B6B')
-      : '#007AFF';
-    ctx.fillStyle = afterColor; ctx.globalAlpha = 0.85;
-    ctx.beginPath(); ctx.roundRect(padL, ay, aw, barH, r); ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = textMain; ctx.font = 'bold 8px -apple-system, sans-serif';
-    const afterText = `${item.after}${item.unit}`;
-    const afterTextX = padL + aw + 4;
-    // Only draw if it won't overlap the badge
-    if (afterTextX + ctx.measureText(afterText).width < badgeX - 4) {
-      ctx.fillText(afterText, afterTextX, ay + barH - 1);
-    }
-
-    // Change badge (right side, vertically centered)
-    const change = isReduction
-      ? Math.round(((item.before - item.after) / item.before) * 100)
-      : Math.round(((item.after - item.before) / item.before) * 100);
-    const arrow = isReduction ? '↓' : '↑';
-    const badgeColor = isReduction ? '#34C759' : '#007AFF';
-    const badgeCY = by + barH; // center between the two bars
-    ctx.fillStyle = badgeColor; ctx.globalAlpha = 0.12;
-    ctx.beginPath(); ctx.roundRect(badgeX, badgeCY - 8, badgeW, 16, 8); ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = badgeColor; ctx.font = 'bold 10px -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${arrow}${change}%`, badgeX + badgeW / 2, badgeCY + 4);
-    ctx.textAlign = 'left'; // reset
-  });
-}
-
-// ─── Chart 3: 이탈 경로 플로우 ────────────────────────────────────
-function drawDistractionFlowChart() {
-  const canvas = document.getElementById('aiWeeklyChart');
-  if (!canvas) return;
-  const d = _aiInsightsData;
-  const { ctx, w, h } = setupAICanvas(canvas, 110);
-
-  const tops = d.topDistractors;
-  if (!tops || tops.length === 0) return;
-
-  const cs = getComputedStyle(document.documentElement);
-  const textColor = cs.getPropertyValue('--text-tertiary').trim() || '#999';
-  const textMain = cs.getPropertyValue('--text').trim() || '#333';
-
-  const padL = 10, padR = 10, padT = 6, padB = 16;
-  const usableW = w - padL - padR;
-  const totalMs = tops.reduce((s, t) => s + t.totalMs, 0);
-  const colors = ['#FF6B6B', '#FF9500', '#FFCC00', '#AF52DE', '#FF2D55'];
-
-  // --- Row 1: Flow path (arrows) ---
-  const flowY = padT;
-  const flowH = 20;
-  if (d.distractionPaths && d.distractionPaths.length > 0) {
-    const longest = d.distractionPaths.reduce((a, b) => b.length > a.length ? b : a, d.distractionPaths[0]);
-    // Limit to max 5 nodes to fit
-    const pathDomains = longest.slice(0, 5).map(n => n.domain.replace('www.', ''));
-    const nodeCount = pathDomains.length;
-    const nodeW = Math.min(60, (usableW - (nodeCount - 1) * 16) / nodeCount);
-    const totalNodesW = nodeW * nodeCount;
-    const arrowW = (usableW - totalNodesW) / Math.max(1, nodeCount - 1);
-
-    let nx = padL;
-    pathDomains.forEach((domain, i) => {
-      const isFirst = i === 0;
-      const cx = nx + nodeW / 2;
-
-      // Node pill
-      ctx.fillStyle = isFirst ? 'rgba(0,122,255,0.1)' : `${colors[(i-1) % colors.length]}20`;
-      ctx.beginPath(); ctx.roundRect(nx, flowY, nodeW, flowH, flowH / 2); ctx.fill();
-
-      // Node text
-      ctx.fillStyle = isFirst ? '#007AFF' : colors[(i-1) % colors.length];
-      ctx.font = isFirst ? 'bold 9px -apple-system, sans-serif' : '9px -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      // Truncate domain to fit nodeW
-      let txt = domain;
-      if (ctx.measureText(txt).width > nodeW - 8) txt = domain.split('.')[0];
-      ctx.fillText(txt, cx, flowY + 13);
-
-      // Arrow to next
-      if (i < nodeCount - 1) {
-        const aStart = nx + nodeW + 2;
-        const aEnd = nx + nodeW + arrowW - 2;
-        const ay = flowY + flowH / 2;
-        if (aEnd > aStart + 6) {
-          ctx.strokeStyle = textColor; ctx.lineWidth = 1; ctx.globalAlpha = 0.4;
-          ctx.beginPath(); ctx.moveTo(aStart, ay); ctx.lineTo(aEnd - 4, ay); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(aEnd, ay); ctx.lineTo(aEnd - 5, ay - 3); ctx.lineTo(aEnd - 5, ay + 3);
-          ctx.closePath(); ctx.fillStyle = textColor; ctx.fill();
-          ctx.globalAlpha = 1;
-        }
-      }
-
-      nx += nodeW + arrowW;
-    });
-  }
-
-  // --- Row 2: Proportional blocks ---
-  const blockY = flowY + flowH + 8;
-  const blockH = h - blockY - padB;
-  const gap = 3;
-  const totalGap = gap * Math.max(0, tops.length - 1);
-  const barAreaW = usableW - totalGap;
-
-  // Normalize widths so they sum exactly to barAreaW (no overflow)
-  const rawWidths = tops.map(t => t.totalMs / totalMs * barAreaW);
-  // Enforce minimum 24px, then scale the rest proportionally
-  const minW = 24;
-  let overflow = 0;
-  const widths = rawWidths.map(rw => {
-    if (rw < minW) { overflow += minW - rw; return minW; }
-    return rw;
-  });
-  // Distribute overflow reduction to large items
-  if (overflow > 0) {
-    const largeItems = widths.filter(ww => ww > minW);
-    const largeSum = largeItems.reduce((s, ww) => s + ww, 0);
-    for (let i = 0; i < widths.length; i++) {
-      if (widths[i] > minW) widths[i] -= (widths[i] / largeSum) * overflow;
-    }
-  }
-
-  let x = padL;
-  tops.forEach((t, i) => {
-    const segW = widths[i];
-    const color = colors[i % colors.length];
-    const r = 4;
-    const minMs = Math.round(t.totalMs / 60000);
-    const label = t.domain.replace('www.', '');
-    const cx = x + segW / 2;
-
-    // Block background
-    ctx.fillStyle = color; ctx.globalAlpha = 0.12;
-    ctx.beginPath(); ctx.roundRect(x, blockY, segW, blockH, r); ctx.fill();
-    ctx.globalAlpha = 1;
-
-    // Left accent bar
-    ctx.fillStyle = color;
-    ctx.fillRect(x, blockY + 3, 3, blockH - 6);
-
-    // Domain name + time
-    ctx.textAlign = 'center';
-    if (segW > 50) {
-      ctx.fillStyle = textMain; ctx.font = 'bold 10px -apple-system, sans-serif';
-      ctx.fillText(label, cx, blockY + blockH / 2 - 4);
-      ctx.fillStyle = color; ctx.font = 'bold 11px -apple-system, sans-serif';
-      ctx.fillText(`${minMs}분`, cx, blockY + blockH / 2 + 10);
-    } else if (segW > 32) {
-      ctx.fillStyle = textMain; ctx.font = '8px -apple-system, sans-serif';
-      ctx.fillText(label.split('.')[0], cx, blockY + blockH / 2 - 2);
-      ctx.fillStyle = color; ctx.font = 'bold 9px -apple-system, sans-serif';
-      ctx.fillText(`${minMs}분`, cx, blockY + blockH / 2 + 10);
-    } else {
-      ctx.fillStyle = color; ctx.font = 'bold 9px -apple-system, sans-serif';
-      ctx.fillText(`${minMs}`, cx, blockY + blockH / 2 + 4);
-    }
-
-    x += segW + gap;
-  });
-
-  // Bottom summary
-  const chainMin = Math.round(d.avgChainTime / 60000);
-  ctx.fillStyle = textColor; ctx.font = '9px -apple-system, sans-serif'; ctx.textAlign = 'right';
-  ctx.fillText(`한번 이탈 시 평균 복귀까지 ${chainMin}분`, w - padR, h - 3);
-}
-
-// ─── Metrics Grid ───────────────────────────────────────────────
-function populateAIMetrics() {
-  const d = _aiInsightsData;
-  if (!d) return;
-
-  const grid = document.getElementById('aiMetricsGrid');
-  if (!grid) return;
-
-  const fmtMs = (ms) => {
-    const h = Math.floor(ms / 3600000);
-    const m = Math.round((ms % 3600000) / 60000);
-    return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
-  };
-
-  const ba = d.beforeAfter;
-  const prodImprove = Math.round(((ba.prodHours.after - ba.prodHours.before) / ba.prodHours.before) * 100);
-  const distractReduce = Math.round(((ba.distractMin.before - ba.distractMin.after) / ba.distractMin.before) * 100);
-  const topD = d.topEntry?.domain?.replace('www.', '') || '-';
-  const weekSaved = Math.round((ba.distractMin.before - ba.distractMin.after) * 7 / 60 * 10) / 10; // hours/week saved
-
-  grid.innerHTML = `
-    <div class="ai-metric-card">
-      <div class="ai-metric-label">deTime 효과</div>
-      <div class="ai-metric-value">+${prodImprove}%</div>
-      <span class="ai-metric-rank ai-rank-good">집중 시간 증가</span>
-    </div>
-    <div class="ai-metric-card">
-      <div class="ai-metric-label">주간 절약</div>
-      <div class="ai-metric-value">${weekSaved}시간</div>
-      <span class="ai-metric-rank ai-rank-good">이탈 ${distractReduce}% 감소</span>
-    </div>
-    <div class="ai-metric-card">
-      <div class="ai-metric-label">이탈 주범</div>
-      <div class="ai-metric-value" style="font-size:14px">${topD}</div>
-      <span class="ai-metric-rank ai-rank-bad">진입 ${d.entryPct}%</span>
-    </div>
-    <div class="ai-metric-card">
-      <div class="ai-metric-label">집중 점수</div>
-      <div class="ai-metric-value">${d.focusScore}<span style="font-size:0.55em;opacity:0.5">/100</span></div>
-      <span class="ai-metric-rank ${d.focusScore >= 60 ? 'ai-rank-good' : 'ai-rank-bad'}">${d.focusScore >= 70 ? '우수' : d.focusScore >= 50 ? '보통' : '개선 필요'}</span>
-    </div>
-  `;
-}
-
-// ─── Category Breakdown Card ──────────────────────────────────
-function populateCategoryBreakdown() {
-  const container = document.getElementById('categoryBreakdownContent');
-  if (!container) return;
-
-  const stats = _mockTodayStats;
-  if (!stats || !stats.categories) return;
-
-  const catMeta = {
-    productivity: { name: 'Productivity',  color: '#74B9FF', icon: '💼' },
-    social:       { name: 'Social Media',  color: '#FFEAA7', icon: '📱' },
-    entertainment:{ name: 'Entertainment', color: '#81ECEC', icon: '🎬' },
-    education:    { name: 'Learning',      color: '#A3D8F4', icon: '📚' },
-    shopping:     { name: 'Shopping',      color: '#A29BFE', icon: '🛒' },
-    news:         { name: 'News',          color: '#FDCB6E', icon: '📰' },
-    games:        { name: 'Games',         color: '#FAB1A0', icon: '🎮' },
-    music:        { name: 'Music',         color: '#DDA0DD', icon: '🎵' },
-    other:        { name: 'Other',         color: '#DFE6E9', icon: '➕' },
-  };
-
-  // Mock domain data per category
-  // Realistic daily usage (total ~5.5h screen time)
-  const mockDomains = {
-    productivity: [
-      { domain: 'notion.so', time: 3720000 },      // 62m
-      { domain: 'github.com', time: 2580000 },      // 43m
-      { domain: 'docs.google.com', time: 1140000 }, // 19m
-      { domain: 'figma.com', time: 840000 },         // 14m
-    ],
-    entertainment: [
-      { domain: 'youtube.com', time: 2820000 },     // 47m
-      { domain: 'netflix.com', time: 1080000 },     // 18m
-    ],
-    social: [
-      { domain: 'instagram.com', time: 1380000 },   // 23m
-      { domain: 'twitter.com', time: 720000 },      // 12m
-      { domain: 'reddit.com', time: 480000 },       // 8m
-    ],
-    education: [
-      { domain: 'stackoverflow.com', time: 960000 },// 16m
-      { domain: 'medium.com', time: 540000 },       // 9m
-    ],
-    news: [
-      { domain: 'news.ycombinator.com', time: 780000 }, // 13m
-    ],
-    shopping: [
-      { domain: 'coupang.com', time: 420000 },      // 7m
-    ],
-    other: [
-      { domain: 'google.com', time: 660000 },       // 11m
-      { domain: 'translate.google.com', time: 180000 }, // 3m
-    ],
-  };
-
-  const fmtTime = (ms) => {
-    const h = Math.floor(ms / 3600000);
-    const m = Math.round((ms % 3600000) / 60000);
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
-  };
-
-  // Sort categories by time
-  const sorted = Object.entries(stats.categories)
-    .map(([key, val]) => ({ key, time: val.time || 0 }))
-    .filter(c => c.time > 0)
-    .sort((a, b) => b.time - a.time);
-
-  const totalTime = sorted.reduce((s, c) => s + c.time, 0);
-  const maxTime = sorted[0]?.time || 1;
-
-  let html = '';
-  sorted.forEach(cat => {
-    const meta = catMeta[cat.key] || catMeta.other;
-    const pct = Math.round((cat.time / totalTime) * 100);
-    const barPct = Math.round((cat.time / maxTime) * 100);
-    const domains = mockDomains[cat.key] || [];
-
-    let domainsHtml = '';
-    domains.forEach(d => {
-      const domPct = Math.round((d.time / cat.time) * 100);
-      domainsHtml += `
-        <div class="cb-domain">
-          <img class="cb-domain-icon" src="https://www.google.com/s2/favicons?domain=${d.domain}&sz=32" alt="" onerror="this.style.display='none'">
-          <span class="cb-domain-name">${d.domain}</span>
-          <span class="cb-domain-time">${fmtTime(d.time)}</span>
-          <span class="cb-domain-pct">${domPct}%</span>
-        </div>`;
-    });
-
-    html += `
-      <div class="cb-category">
-        <div class="cb-cat-header">
-          <span class="cb-cat-icon">${meta.icon}</span>
-          <span class="cb-cat-name">${meta.name}</span>
-          <span class="cb-cat-time">${fmtTime(cat.time)}</span>
-          <span class="cb-cat-pct">${pct}%</span>
-        </div>
-        <div class="cb-cat-bar-track">
-          <div class="cb-cat-bar" style="width:${barPct}%; background:${meta.color};"></div>
-        </div>
-        <div class="cb-domains">${domainsHtml}</div>
-      </div>`;
-  });
-
-  container.innerHTML = html;
-}
-
-/**
- * Restore real chrome.runtime.sendMessage
- */
-function disableMockData() {
-  if (!mockupModeActive) return;
-  mockupModeActive = false;
-  _mockTodayStats = null;
-  _mockWeekData = null;
-  _mockSessions = null;
-
-  if (originalSendMessage) {
-    chrome.runtime.sendMessage = originalSendMessage;
-    originalSendMessage = null;
-  }
-
-  // Restore real goals
-  loadGoalsData();
-
-  // Restore original productive color
-  PRODUCTIVITY_GROUPS.productive.color = '#007AFF';
-  document.documentElement.style.removeProperty('--productive-color');
-
-  document.body.classList.remove('mockup-data-active');
-
-  // Hide mockup-only elements
-  document.querySelectorAll('.mockup-only').forEach(el => el.classList.add('hidden'));
-
-  console.log('[Mockup] Mock data disabled');
-}
-
-/**
- * Toggle mobile preview mode
- */
-// Mobile View: handles visual layout (CSS class toggle + compact layout + canvas redraw)
-function toggleMobileView(enabled) {
-  if (enabled) {
-    document.body.classList.add('mobile-preview-mode');
-    document.body.classList.add('mockup-layout-active');
-    applyMockLayout();
-  } else {
-    document.body.classList.remove('mobile-preview-mode');
-    document.body.classList.remove('mockup-layout-active');
-    // Remove inline layout styles
-    document.querySelectorAll('.category-cell').forEach(el => { el.style.cssText = ''; });
-    document.querySelectorAll('.productivity-section').forEach(el => { el.style.cssText = ''; });
-    document.querySelectorAll('.categories-section').forEach(el => { el.style.cssText = ''; });
-  }
-
-  // Redraw canvases at new size (data stays the same)
-  setTimeout(() => {
-    if (document.body.classList.contains('mockup-data-active')) {
-      requestAnimationFrame(() => requestAnimationFrame(() => drawAIInsightsCharts()));
-    }
-  }, 300);
-}
-
-// Initialize mockup controls
-function initMockupControls() {
-  const mockDataToggle = document.getElementById('mockDataToggle');
-  const mobileViewToggle = document.getElementById('mobileViewToggle');
-
-  // Mock Data toggle: ONLY handles data (mock vs real)
-  if (mockDataToggle) {
-    mockDataToggle.addEventListener('change', async (e) => {
-      if (e.target.checked) {
-        enableMockData();
-      } else {
-        disableMockData();
-      }
-      // Reload current view with mock/real data
-      const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-      if (activeTab) {
-        await loadTabData(activeTab);
-      }
-      // After DOM rebuild, re-apply layout if mobile is on + draw charts
-      if (mockupModeActive) {
-        if (document.body.classList.contains('mockup-layout-active')) {
-          applyMockLayout();
-        }
-        requestAnimationFrame(() => requestAnimationFrame(() => drawAIInsightsCharts()));
-      }
-    });
-  }
-
-  // Mobile View toggle: ONLY handles visual sizing
-  if (mobileViewToggle) {
-    mobileViewToggle.addEventListener('change', (e) => {
-      toggleMobileView(e.target.checked);
-    });
-  }
-}
-
-// Init mockup controls when ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initMockupControls);
-} else {
-  initMockupControls();
-}
-
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  MOCKUP MODE — END                                         ║
-// ╚══════════════════════════════════════════════════════════════╝

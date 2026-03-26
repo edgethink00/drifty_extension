@@ -21,7 +21,7 @@ export const SUBCATEGORIES = {
     general: "Music streaming and listening"
   },
 
-  workspace: {
+  productivity: {
     email: "Email clients and services",
     documents: "Document editing, spreadsheets",
     tools: "Work tools, project management",

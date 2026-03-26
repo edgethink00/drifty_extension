@@ -39,10 +39,6 @@ const limitHours = document.getElementById('limitHours');
 const limitMinutes = document.getElementById('limitMinutes');
 const addLimitBtn = document.getElementById('addLimitBtn');
 
-// Day toggle buttons
-const todayBtn = document.getElementById('todayBtn');
-const yesterdayBtn = document.getElementById('yesterdayBtn');
-
 // ============================================
 // State
 // ============================================
@@ -50,7 +46,6 @@ let categoriesInfo = {};
 let todayStats = {};
 let categoryDomainUsage = {};
 let currentSelection = null;
-let viewingDay = 'today'; // 'today' or 'yesterday'
 
 // Current session real-time tracking
 let currentSessionData = null;
@@ -135,10 +130,6 @@ function setupEventListeners() {
   limitsBtn?.addEventListener('click', showLimitsView);
   backToMainBtn?.addEventListener('click', showMainView);
 
-  // Day toggle
-  todayBtn?.addEventListener('click', () => switchDay('today'));
-  yesterdayBtn?.addEventListener('click', () => switchDay('yesterday'));
-
   // Add limit button
   addLimitBtn?.addEventListener('click', saveNewLimit);
 }
@@ -158,53 +149,19 @@ function showLimitsView() {
 }
 
 // ============================================
-// Day Toggle
-// ============================================
-async function switchDay(day) {
-  viewingDay = day;
-
-  // Update button states
-  todayBtn?.classList.toggle('active', day === 'today');
-  yesterdayBtn?.classList.toggle('active', day === 'yesterday');
-
-  // Update date display
-  const date = day === 'today' ? new Date() : new Date(Date.now() - 86400000);
-  if (todayDateEl) {
-    todayDateEl.textContent = date.toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric'
-    });
-  }
-
-  // Show/hide current site card (only for today)
-  if (currentSiteCard) {
-    currentSiteCard.classList.toggle('hidden', day !== 'today');
-  }
-
-  await loadPopupData(day);
-}
-
-// ============================================
 // Load Data
 // ============================================
-async function loadPopupData(day = 'today') {
+async function loadPopupData() {
   try {
     // Show loading state
     categoriesListEl.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
 
-    // Get stats for the selected day
-    let response;
-    if (day === 'yesterday') {
-      const yesterday = new Date(Date.now() - 86400000);
-      const dateStr = yesterday.toISOString().split('T')[0];
-      response = await chrome.runtime.sendMessage({ type: 'GET_DATE_STATS', date: dateStr });
-    } else {
-      response = await chrome.runtime.sendMessage({ type: 'GET_TODAY_STATS' });
-    }
+    // Get today's stats
+    const response = await chrome.runtime.sendMessage({ type: 'GET_TODAY_STATS' });
     if (!response.success) {
       throw new Error(response.error || 'Failed to load stats');
     }
-    // GET_DATE_STATS returns { stats, sessions }, GET_TODAY_STATS returns stats directly
-    todayStats = response.data.stats || response.data;
+    todayStats = response.data;
 
     // Get categories info
     const categoriesResponse = await chrome.runtime.sendMessage({ type: 'GET_CATEGORIES' });
@@ -220,10 +177,8 @@ async function loadPopupData(day = 'today') {
     displayMostUsed(todayStats.categories || {}, categoriesInfo);
     drawTimeRing(todayStats.categories || {}, categoriesInfo);
 
-    // Display current site info (only for today)
-    if (day === 'today') {
-      await displayCurrentSite(todayStats, categoriesInfo);
-    }
+    // Display current site info
+    await displayCurrentSite(todayStats, categoriesInfo);
 
   } catch (error) {
     console.error('Error loading popup data:', error);
@@ -454,14 +409,13 @@ function drawTimeRing(categories, categoriesInfo) {
   if (!timeRingCanvas) return;
 
   const ctx = timeRingCanvas.getContext('2d');
-  const size = 100;
-  const centerX = size / 2;
-  const centerY = size / 2;
-  const radius = 40;
-  const lineWidth = 9;
+  const centerX = 60;
+  const centerY = 60;
+  const radius = 50;
+  const lineWidth = 10;
 
   // Clear canvas
-  ctx.clearRect(0, 0, size, size);
+  ctx.clearRect(0, 0, 120, 120);
 
   // Get sorted categories with time
   const sortedCategories = Object.entries(categories)
@@ -738,13 +692,13 @@ async function loadCurrentLimits() {
       }
 
       return `
-        <div class="limit-item" data-id="${limit.id || `cat:${limit.category}`}">
+        <div class="limit-item" data-category="${limit.category}">
           <div class="limit-info">
             <div class="limit-name">${displayName}</div>
             ${categoryLabel ? `<div class="limit-category">${categoryLabel}</div>` : ''}
           </div>
           <div class="limit-time">${timeStr}</div>
-          <button class="limit-delete" data-id="${limit.id || `cat:${limit.category}`}">🗑️</button>
+          <button class="limit-delete" data-category="${limit.category}">🗑️</button>
         </div>
       `;
     }).join('');
@@ -752,9 +706,9 @@ async function loadCurrentLimits() {
     // Add delete event listeners
     currentLimitsList.querySelectorAll('.limit-delete').forEach(btn => {
       btn.addEventListener('click', async (e) => {
-        const id = e.currentTarget.dataset.id;
+        const category = e.currentTarget.dataset.category;
         if (confirm('Delete this limit?')) {
-          await chrome.runtime.sendMessage({ type: 'DELETE_LIMIT', id });
+          await chrome.runtime.sendMessage({ type: 'DELETE_LIMIT', category });
           loadCurrentLimits();
         }
       });
@@ -985,7 +939,7 @@ async function saveNewLimit() {
 
     // Check for duplicate limits
     const existingLimits = await chrome.runtime.sendMessage({ type: 'GET_LIMITS' });
-    const existingLimit = (existingLimits.data || []).find(l => (l.id || l.category) === limitId);
+    const existingLimit = (existingLimits.data || []).find(l => l.category === limitId);
     if (existingLimit) {
       if (!confirm('A limit with these selections already exists. Do you want to update it?')) {
         return;
@@ -993,13 +947,10 @@ async function saveNewLimit() {
     }
 
     const limit = {
-      id: `cat:${limitId}`,
       dailyLimit,
       enabled: true,
       alertMinutesBefore: 5,
       blockWhenLimitReached: true,
-      targetType: 'category',
-      targetValue: null,
       includeSites,
       includeCategories,
       excludeSites: []
@@ -1049,6 +1000,138 @@ function hexToRgba(hex, alpha) {
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+// ============================================
+// Focus Mode
+// ============================================
+const focusToggleBtn = document.getElementById('focusToggleBtn');
+const focusActiveSection = document.getElementById('focusActiveSection');
+const focusSettingsSection = document.getElementById('focusSettingsSection');
+const focusStatus = document.getElementById('focusStatus');
+const focusTimer = document.getElementById('focusTimer');
+const focusProgressFill = document.getElementById('focusProgressFill');
+const stopFocusBtn = document.getElementById('stopFocusBtn');
+const focusDuration = document.getElementById('focusDuration');
+
+let focusTimerInterval = null;
+
+// Load Focus Mode status
+loadFocusModeStatus();
+
+async function loadFocusModeStatus() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_FOCUS_MODE_STATUS' });
+    const focusMode = response.data;
+
+    if (focusMode && focusMode.isActive) {
+      showFocusActive(focusMode);
+    } else {
+      showFocusInactive();
+    }
+  } catch (error) {
+    console.error('Error loading focus mode status:', error);
+  }
+}
+
+function showFocusActive(focusMode) {
+  // Validate focus mode data
+  if (!focusMode.startTime || !focusMode.duration) {
+    console.error('Invalid focus mode data:', focusMode);
+    showFocusInactive();
+    return;
+  }
+
+  focusToggleBtn.style.display = 'none';
+  focusSettingsSection.classList.add('hidden');
+  focusActiveSection.classList.remove('hidden');
+  focusStatus.textContent = 'Focus session in progress';
+
+  // Start timer update
+  updateFocusTimer(focusMode);
+  if (focusTimerInterval) clearInterval(focusTimerInterval);
+  focusTimerInterval = setInterval(() => updateFocusTimer(focusMode), 1000);
+}
+
+function showFocusInactive() {
+  focusToggleBtn.style.display = 'block';
+  focusToggleBtn.textContent = 'Start';
+  focusActiveSection.classList.add('hidden');
+  focusSettingsSection.classList.remove('hidden');
+  focusStatus.textContent = 'Stay focused, block distractions';
+
+  if (focusTimerInterval) {
+    clearInterval(focusTimerInterval);
+    focusTimerInterval = null;
+  }
+}
+
+function updateFocusTimer(focusMode) {
+  const elapsed = Date.now() - focusMode.startTime;
+  const remaining = Math.max(0, focusMode.duration - elapsed);
+  const progress = (elapsed / focusMode.duration) * 100;
+
+  if (remaining <= 0) {
+    // Focus session completed
+    completeFocusSession();
+    return;
+  }
+
+  const minutes = Math.floor(remaining / 60000);
+  const seconds = Math.floor((remaining % 60000) / 1000);
+  focusTimer.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  focusProgressFill.style.width = `${Math.min(100, progress)}%`;
+}
+
+async function startFocusSession() {
+  const duration = parseInt(focusDuration.value) * 60 * 1000;
+
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'START_FOCUS_MODE',
+      duration: duration,
+      blockedCategories: ['entertainment', 'social', 'games']
+    });
+
+    // Reload status
+    loadFocusModeStatus();
+  } catch (error) {
+    console.error('Error starting focus mode:', error);
+  }
+}
+
+async function stopFocusSession() {
+  if (!confirm('End focus session early?')) return;
+
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'STOP_FOCUS_MODE',
+      completed: false
+    });
+    showFocusInactive();
+  } catch (error) {
+    console.error('Error stopping focus mode:', error);
+  }
+}
+
+async function completeFocusSession() {
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'STOP_FOCUS_MODE',
+      completed: true
+    });
+    showFocusInactive();
+    focusStatus.textContent = 'Session completed! Great work!';
+    setTimeout(() => {
+      focusStatus.textContent = 'Stay focused, block distractions';
+    }, 3000);
+  } catch (error) {
+    console.error('Error completing focus mode:', error);
+  }
+}
+
+// Event listeners
+focusToggleBtn?.addEventListener('click', startFocusSession);
+stopFocusBtn?.addEventListener('click', stopFocusSession);
 
 // ============================================
 // Current Session Real-time Timer
@@ -1133,3 +1216,4 @@ function stopSessionTimer() {
 // Auto-refresh
 // ============================================
 setInterval(loadPopupData, 30000);
+setInterval(loadFocusModeStatus, 5000); // Update focus mode more frequently

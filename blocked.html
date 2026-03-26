@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Time Limit Reached</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+      background: #0a0a0a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      overflow: hidden;
+    }
+
+    .container {
+      text-align: center;
+      padding: 40px;
+      max-width: 480px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .icon {
+      font-size: 72px;
+      margin-bottom: 24px;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #FF6B6B, #FF3B30);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .category-badge {
+      display: inline-block;
+      background: rgba(255, 59, 48, 0.2);
+      border: 1px solid rgba(255, 59, 48, 0.3);
+      padding: 8px 20px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #FF6B6B;
+      margin-bottom: 24px;
+    }
+
+    .message {
+      font-size: 15px;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.7);
+      margin-bottom: 32px;
+    }
+
+    .stats-card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+    }
+
+    .stat-row:not(:last-child) {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .stat-label {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+    }
+
+    .stat-value {
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .stat-value.exceeded {
+      color: #FF3B30;
+    }
+
+    .countdown-card {
+      background: linear-gradient(135deg, rgba(139, 175, 91, 0.15), rgba(139, 175, 91, 0.05));
+      border: 1px solid rgba(139, 175, 91, 0.2);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 32px;
+    }
+
+    .countdown-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+    }
+
+    .countdown-time {
+      font-size: 32px;
+      font-weight: 700;
+      color: #8BAF5B;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .countdown-sublabel {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 4px;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 24px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      border: none;
+    }
+
+    .btn-primary {
+      background: #8BAF5B;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #6B8F3B;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(139, 175, 91, 0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .quote {
+      margin-top: 40px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 12px;
+      font-style: italic;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .quote-author {
+      margin-top: 8px;
+      font-style: normal;
+      color: rgba(255, 255, 255, 0.3);
+    }
+
+    /* Background effect */
+    .bg-gradient {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at 50% 0%, rgba(255, 59, 48, 0.15) 0%, transparent 50%);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-gradient"></div>
+  <div class="container">
+    <div class="icon">⛔</div>
+    <h1>Time Limit Reached</h1>
+    <div class="category-badge" id="categoryName">Loading...</div>
+    <p class="message">
+      You've used all your allotted time for today.<br>
+      Take a break and come back tomorrow!
+    </p>
+
+    <div class="stats-card">
+      <div class="stat-row">
+        <span class="stat-label">Daily Limit</span>
+        <span class="stat-value" id="limitValue">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Time Used</span>
+        <span class="stat-value exceeded" id="usedValue">-</span>
+      </div>
+    </div>
+
+    <div class="countdown-card">
+      <div class="countdown-label">Limit Resets In</div>
+      <div class="countdown-time" id="countdownTime">--:--:--</div>
+      <div class="countdown-sublabel">until midnight</div>
+    </div>
+
+    <div class="actions">
+      <a href="dashboard/dashboard.html" class="btn btn-primary">
+        <span>⏱️</span> View Dashboard
+      </a>
+      <button class="btn btn-secondary" id="closeTabBtn">
+        <span>✕</span> Close Tab
+      </button>
+    </div>
+
+    <div class="quote">
+      "The key is not to prioritize what's on your schedule, but to schedule your priorities."
+      <div class="quote-author">— Stephen Covey</div>
+    </div>
+  </div>
+
+  <script>
+    function formatTime(ms) {
+      if (!ms || ms < 0) return '0m';
+      const hours = Math.floor(ms / 3600000);
+      const minutes = Math.floor((ms % 3600000) / 60000);
+      if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      return `${minutes}m`;
+    }
+
+    function updateCountdown() {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setHours(24, 0, 0, 0);
+
+      const diff = midnight - now;
+      const hours = Math.floor(diff / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+
+      document.getElementById('countdownTime').textContent =
+        `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    // Parse URL parameters
+    const params = new URLSearchParams(window.location.search);
+    const category = params.get('category') || 'this category';
+    const limit = parseInt(params.get('limit')) || 0;
+    const used = parseInt(params.get('used')) || 0;
+
+    document.getElementById('categoryName').textContent = category;
+    document.getElementById('limitValue').textContent = formatTime(limit);
+    document.getElementById('usedValue').textContent = formatTime(used);
+
+    // Start countdown
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
+
+    // Close tab button
+    document.getElementById('closeTabBtn').addEventListener('click', function() {
+      window.close();
+      // Fallback if window.close() doesn't work
+      setTimeout(() => {
+        window.location.href = 'about:blank';
+      }, 100);
+    });
+
+    // Prevent going back to blocked site
+    history.pushState(null, '', location.href);
+    window.addEventListener('popstate', function() {
+      history.pushState(null, '', location.href);
+    });
+
+    // Prevent navigation shortcuts
+    document.addEventListener('keydown', function(e) {
+      // Prevent Alt+Left (back) and Backspace (back in some browsers)
+      if ((e.altKey && e.key === 'ArrowLeft') ||
+          (e.key === 'Backspace' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName))) {
+        e.preventDefault();
+      }
+    });
+  </script>
+</body>
+</html>

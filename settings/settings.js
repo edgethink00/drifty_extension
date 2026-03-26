@@ -1,6 +1,4 @@
 import { formatTime } from '../common/utils.js';
-import { SUBCATEGORIES, getSubcategoryName, hasMultipleSubcategories } from '../common/subcategories.js';
-import { PRODUCTIVITY_GROUPS } from '../common/constants.js';
 
 // DOM elements
 const backBtn = document.getElementById('backBtn');
@@ -50,17 +48,12 @@ const clearDataBtn = document.getElementById('clearDataBtn');
 const limitCategory = document.getElementById('limitCategory');
 const limitHours = document.getElementById('limitHours');
 const limitMinutes = document.getElementById('limitMinutes');
-const limitTargetType = document.getElementById('limitTargetType');
-const limitSubcategory = document.getElementById('limitSubcategory');
-const limitDomain = document.getElementById('limitDomain');
-const subcategoryTarget = document.getElementById('subcategoryTarget');
-const domainTarget = document.getElementById('domainTarget');
-const refinementGroup = document.getElementById('refinementGroup');
-const targetTypeBtns = document.querySelectorAll('.target-type-btn');
+const excludeSites = document.getElementById('excludeSites');
+const includeSites = document.getElementById('includeSites');
 
 let categoriesInfo = {};
 let currentSettings = {};
-let editingLimitId = null; // Track if we're editing an existing limit
+let editingCategory = null; // Track if we're editing an existing limit
 
 // Initialize
 loadSettings();
@@ -71,10 +64,10 @@ loadHistoryAnalysisStatus();
 
 // Check for edit parameter in URL
 const urlParams = new URLSearchParams(window.location.search);
-const editParam = urlParams.get('edit');
-if (editParam) {
+const editCategory = urlParams.get('edit');
+if (editCategory) {
   // Wait for limits to load, then open edit modal
-  setTimeout(() => openEditModal(editParam), 500);
+  setTimeout(() => openEditModal(editCategory), 500);
 }
 
 // Event listeners
@@ -85,12 +78,12 @@ backBtn.addEventListener('click', () => {
 
 addLimitBtn.addEventListener('click', () => {
   // Reset form for new limit
-  editingLimitId = null;
+  editingCategory = null;
   limitCategory.disabled = false;
   limitHours.value = 1;
   limitMinutes.value = 0;
-  limitDomain.value = '';
-  onCategoryChange();
+  excludeSites.value = '';
+  includeSites.value = '';
 
   // Reset modal title
   const modalTitle = document.querySelector('#addLimitModal .modal-header h3');
@@ -103,80 +96,15 @@ addLimitBtn.addEventListener('click', () => {
 
 modalClose.addEventListener('click', () => {
   addLimitModal.classList.remove('active');
-  editingLimitId = null;
+  editingCategory = null;
   limitCategory.disabled = false;
 });
 
 cancelLimitBtn.addEventListener('click', () => {
   addLimitModal.classList.remove('active');
-  editingLimitId = null;
+  editingCategory = null;
   limitCategory.disabled = false;
 });
-
-// Target type selector
-targetTypeBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (btn.disabled) return;
-    setTargetType(btn.dataset.type);
-  });
-});
-
-// Update refinement options when category changes
-limitCategory.addEventListener('change', () => {
-  onCategoryChange();
-});
-
-/**
- * Check if current selection is a productivity group
- */
-function isGroupSelection() {
-  return limitCategory.value.startsWith('group:');
-}
-
-/**
- * Handle category dropdown change
- */
-function onCategoryChange() {
-  if (isGroupSelection()) {
-    // Group selected — no refinement needed
-    refinementGroup.style.display = 'none';
-    setTargetType('category');
-  } else {
-    // Individual category — show refinement options
-    refinementGroup.style.display = '';
-    setTargetType('category');
-    updateSubcategoryOptions();
-  }
-}
-
-function setTargetType(type) {
-  limitTargetType.value = type;
-  targetTypeBtns.forEach(b => b.classList.toggle('active', b.dataset.type === type));
-  subcategoryTarget.style.display = type === 'subcategory' ? 'block' : 'none';
-  domainTarget.style.display = type === 'domain' ? 'block' : 'none';
-}
-
-function updateSubcategoryOptions() {
-  const category = limitCategory.value;
-  const subcats = SUBCATEGORIES[category] || {};
-  const entries = Object.entries(subcats).filter(([key]) => key !== 'general');
-
-  limitSubcategory.innerHTML = entries.length > 0
-    ? entries.map(([key]) => `<option value="${key}">${getSubcategoryName(key)}</option>`).join('')
-    : '<option value="" disabled>No subcategories available</option>';
-
-  // Disable subcategory button if none available
-  const subBtn = document.querySelector('.target-type-btn[data-type="subcategory"]');
-  if (subBtn) {
-    const hasSubcats = entries.length > 0;
-    subBtn.disabled = !hasSubcats;
-    subBtn.classList.toggle('disabled', !hasSubcats);
-    // If subcategory was selected but no longer available, fall back
-    if (!hasSubcats && limitTargetType.value === 'subcategory') {
-      setTargetType('category');
-    }
-  }
-}
 
 saveLimitBtn.addEventListener('click', saveLimit);
 
@@ -270,10 +198,6 @@ weekStartDaySelect.addEventListener('change', async (e) => {
 // Export data
 exportDataBtn.addEventListener('click', exportData);
 
-// Debug log download
-const downloadDebugBtn = document.getElementById('downloadDebugBtn');
-downloadDebugBtn.addEventListener('click', downloadDebugLog);
-
 // Clear data
 clearDataBtn.addEventListener('click', async () => {
   if (confirm('Are you sure you want to clear ALL data? This cannot be undone.')) {
@@ -342,29 +266,13 @@ async function loadCategories() {
     const response = await chrome.runtime.sendMessage({ type: 'GET_CATEGORIES' });
     categoriesInfo = response.data;
 
-    // Build dropdown: productivity groups + individual categories
-    let html = '';
-
-    // Productivity group options
-    html += '<optgroup label="Productivity Groups">';
-    for (const [groupKey, group] of Object.entries(PRODUCTIVITY_GROUPS)) {
-      html += `<option value="group:${groupKey}">${group.icon} All ${group.name}</option>`;
-    }
-    html += '</optgroup>';
-
-    // Individual categories grouped by productivity
-    for (const [groupKey, group] of Object.entries(PRODUCTIVITY_GROUPS)) {
-      html += `<optgroup label="${group.name}">`;
-      for (const cat of group.categories) {
-        const info = categoriesInfo[cat];
-        if (info && cat !== 'adult') {
-          html += `<option value="${cat}">${info.icon} ${info.name}</option>`;
-        }
-      }
-      html += '</optgroup>';
-    }
-
-    limitCategory.innerHTML = html;
+    // Populate category dropdown (exclude 'other' and 'adult')
+    limitCategory.innerHTML = Object.entries(categoriesInfo)
+      .filter(([key]) => key !== 'other' && key !== 'adult')
+      .map(([key, info]) => `
+        <option value="${key}">${info.icon} ${info.name}</option>
+      `)
+      .join('');
 
   } catch (error) {
     console.error('Error loading categories:', error);
@@ -385,47 +293,36 @@ async function loadLimits() {
     }
 
     limitsList.innerHTML = limits.map(limit => {
+      const info = categoriesInfo[limit.category];
       const hours = Math.floor(limit.dailyLimit / 3600000);
       const minutes = Math.floor((limit.dailyLimit % 3600000) / 60000);
       const timeStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-      const limitId = limit.id || `cat:${limit.category}`;
-      const targetType = limit.targetType || 'category';
 
-      // Build display name and icon
-      let icon, name, targetLabel = '';
-
-      const groupIcons = { productive: '🟢', unproductive: '🔴', neutral: '⚪' };
-      if (targetType === 'group' && limit.targetValue) {
-        const group = PRODUCTIVITY_GROUPS[limit.targetValue];
-        icon = groupIcons[limit.targetValue] || '⏱️';
-        name = `All ${group?.name || limit.targetValue}`;
-      } else {
-        const info = categoriesInfo[limit.category];
-        icon = info?.icon || '⏱️';
-        name = info?.name || limit.category;
-
-        if (targetType === 'subcategory' && limit.targetValue) {
-          targetLabel = `<span class="limit-target limit-target-sub">${getSubcategoryName(limit.targetValue)}</span>`;
-        } else if (targetType === 'domain' && limit.targetValue) {
-          targetLabel = `<span class="limit-target limit-target-dom">${limit.targetValue}</span>`;
-        }
+      // Build filter info
+      let filterHtml = '';
+      if (limit.excludeSites && limit.excludeSites.length > 0) {
+        filterHtml += `<div class="limit-filters">Exclude: ${limit.excludeSites.map(s => `<span>${s}</span>`).join('')}</div>`;
+      }
+      if (limit.includeSites && limit.includeSites.length > 0) {
+        filterHtml += `<div class="limit-filters">Only: ${limit.includeSites.map(s => `<span>${s}</span>`).join('')}</div>`;
       }
 
       return `
-        <div class="limit-item" data-id="${limitId}">
+        <div class="limit-item" data-category="${limit.category}">
           <div class="limit-info">
-            <div class="limit-icon">${icon}</div>
+            <div class="limit-icon">${info?.icon || '⏱️'}</div>
             <div class="limit-details">
-              <div class="limit-category">${name} ${targetLabel}</div>
+              <div class="limit-category">${info?.name || limit.category}</div>
               <div class="limit-time">Limit: ${timeStr} per day</div>
+              ${filterHtml}
             </div>
           </div>
           <div class="limit-actions">
             <label class="toggle limit-toggle">
-              <input type="checkbox" class="limit-toggle-checkbox" data-id="${limitId}" ${limit.enabled ? 'checked' : ''}>
+              <input type="checkbox" class="limit-toggle-checkbox" data-category="${limit.category}" ${limit.enabled ? 'checked' : ''}>
               <span class="toggle-slider"></span>
             </label>
-            <button class="btn-icon delete limit-delete-btn" data-id="${limitId}">🗑️</button>
+            <button class="btn-icon delete limit-delete-btn" data-category="${limit.category}">🗑️</button>
           </div>
         </div>
       `;
@@ -439,45 +336,31 @@ async function loadLimits() {
 /**
  * Open modal to edit existing limit
  */
-async function openEditModal(limitId) {
+async function openEditModal(category) {
   try {
     const response = await chrome.runtime.sendMessage({ type: 'GET_LIMITS' });
     const limits = response.data || [];
-    // Support both old category-based lookup and new id-based
-    const limit = limits.find(l => l.id === limitId || l.category === limitId);
+    const limit = limits.find(l => l.category === category);
 
     if (!limit) {
-      console.error('Limit not found:', limitId);
+      console.error('Limit not found for category:', category);
       return;
     }
 
     // Set editing mode
-    editingLimitId = limit.id || `cat:${limit.category}`;
+    editingCategory = category;
 
     // Populate form with existing values
-    const targetType = limit.targetType || 'category';
-
-    if (targetType === 'group') {
-      limitCategory.value = `group:${limit.targetValue}`;
-    } else {
-      limitCategory.value = limit.category;
-    }
-    limitCategory.disabled = true;
-    onCategoryChange();
+    limitCategory.value = category;
+    limitCategory.disabled = true; // Don't allow changing category when editing
 
     const hours = Math.floor(limit.dailyLimit / 3600000);
     const minutes = Math.floor((limit.dailyLimit % 3600000) / 60000);
     limitHours.value = hours;
     limitMinutes.value = minutes;
 
-    // Set refinement target
-    if (targetType === 'subcategory' && limit.targetValue) {
-      setTargetType('subcategory');
-      limitSubcategory.value = limit.targetValue;
-    } else if (targetType === 'domain' && limit.targetValue) {
-      setTargetType('domain');
-      limitDomain.value = limit.targetValue;
-    }
+    excludeSites.value = (limit.excludeSites || []).join(', ');
+    includeSites.value = (limit.includeSites || []).join(', ');
 
     // Update modal title
     const modalTitle = document.querySelector('#addLimitModal .modal-header h3');
@@ -498,7 +381,7 @@ async function openEditModal(limitId) {
  */
 async function saveLimit() {
   try {
-    const selection = limitCategory.value;
+    const category = editingCategory || limitCategory.value;
     const hours = parseInt(limitHours.value) || 0;
     const minutes = parseInt(limitMinutes.value) || 0;
 
@@ -509,63 +392,36 @@ async function saveLimit() {
       return;
     }
 
-    let id, category, targetType, targetValue;
+    // Parse site filters
+    const excludeList = excludeSites.value
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s.length > 0);
 
-    if (selection.startsWith('group:')) {
-      // Productivity group limit
-      const groupKey = selection.replace('group:', '');
-      id = `grp:${groupKey}`;
-      category = groupKey; // store group key as category
-      targetType = 'group';
-      targetValue = groupKey;
-    } else {
-      // Individual category — check refinement
-      category = selection;
-      targetType = limitTargetType.value;
-      targetValue = null;
-
-      if (targetType === 'subcategory') {
-        targetValue = limitSubcategory.value;
-        if (!targetValue) {
-          alert('Please select a subcategory');
-          return;
-        }
-        id = `sub:${category}:${targetValue}`;
-      } else if (targetType === 'domain') {
-        targetValue = limitDomain.value.trim().toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '');
-        if (!targetValue) {
-          alert('Please enter a domain');
-          return;
-        }
-        id = `dom:${category}:${targetValue}`;
-      } else {
-        id = `cat:${category}`;
-      }
-    }
+    const includeList = includeSites.value
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s.length > 0);
 
     // If editing, get current enabled state; otherwise default to true
     let enabled = true;
-    if (editingLimitId) {
+    if (editingCategory) {
       const response = await chrome.runtime.sendMessage({ type: 'GET_LIMITS' });
       const limits = response.data || [];
-      const existingLimit = limits.find(l => l.id === editingLimitId);
+      const existingLimit = limits.find(l => l.category === category);
       if (existingLimit) {
         enabled = existingLimit.enabled;
-      }
-      if (editingLimitId !== id) {
-        await chrome.runtime.sendMessage({ type: 'DELETE_LIMIT', id: editingLimitId });
       }
     }
 
     const limit = {
-      id,
       dailyLimit,
       enabled,
-      targetType,
-      targetValue,
+      alertAt: 0.917, // Alert 5 minutes before (approximately)
       alertMinutesBefore: 5,
       blockMethod: 'soft',
-      blockWhenLimitReached: true
+      excludeSites: excludeList,
+      includeSites: includeList
     };
 
     await chrome.runtime.sendMessage({
@@ -574,8 +430,9 @@ async function saveLimit() {
       limit
     });
 
+    // Close modal and reload limits
     addLimitModal.classList.remove('active');
-    editingLimitId = null;
+    editingCategory = null;
     limitCategory.disabled = false;
     loadLimits();
 
@@ -589,7 +446,7 @@ async function saveLimit() {
 limitsList.addEventListener('click', async (e) => {
   // Handle delete button click
   if (e.target.classList.contains('limit-delete-btn')) {
-    const id = e.target.dataset.id;
+    const category = e.target.dataset.category;
     if (!confirm('Are you sure you want to delete this limit?')) {
       return;
     }
@@ -597,7 +454,7 @@ limitsList.addEventListener('click', async (e) => {
     try {
       await chrome.runtime.sendMessage({
         type: 'DELETE_LIMIT',
-        id
+        category
       });
       loadLimits();
     } catch (error) {
@@ -605,30 +462,23 @@ limitsList.addEventListener('click', async (e) => {
       alert('Failed to delete limit');
     }
   }
-
-  // Handle clicking a limit item to edit
-  const limitItem = e.target.closest('.limit-item');
-  if (limitItem && !e.target.closest('.limit-actions')) {
-    const id = limitItem.dataset.id;
-    if (id) openEditModal(id);
-  }
 });
 
 limitsList.addEventListener('change', async (e) => {
   // Handle toggle checkbox change
   if (e.target.classList.contains('limit-toggle-checkbox')) {
-    const id = e.target.dataset.id;
+    const category = e.target.dataset.category;
     const enabled = e.target.checked;
 
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_LIMITS' });
       const limits = response.data || [];
-      const limit = limits.find(l => l.id === id);
+      const limit = limits.find(l => l.category === category);
 
       if (limit) {
         await chrome.runtime.sendMessage({
           type: 'SET_LIMIT',
-          category: limit.category,
+          category,
           limit: {
             ...limit,
             enabled: enabled
@@ -758,153 +608,4 @@ async function loadHistoryAnalysisStatus() {
   } catch (error) {
     console.error('Error loading history analysis status:', error);
   }
-}
-
-/**
- * Download debug log as .txt
- */
-async function downloadDebugLog() {
-  downloadDebugBtn.textContent = '⏳ Collecting...';
-  downloadDebugBtn.disabled = true;
-
-  try {
-    const resp = await chrome.runtime.sendMessage({ type: 'GET_DEBUG_DATA' });
-    if (!resp.success) {
-      alert('Error: ' + resp.error);
-      return;
-    }
-
-    const d = resp.data;
-    const lines = [];
-
-    lines.push('========================================');
-    lines.push('  deTime Session Debug Report');
-    lines.push('  Generated: ' + new Date().toISOString());
-    lines.push('========================================');
-    lines.push('');
-
-    // Service Worker
-    const sw = d.serviceWorker || {};
-    lines.push('[Service Worker]');
-    lines.push('  Started at:  ' + (sw.startTime || '?'));
-    lines.push('  Uptime:      ' + (sw.uptimeMin || 0) + ' min');
-    lines.push('');
-
-    // Current state
-    const cs = d.currentState;
-    lines.push('[Current State]');
-    lines.push('  Session active:  ' + cs.hasCurrentSession);
-    lines.push('  Session state:   ' + cs.sessionState);
-    lines.push('  Is user idle:    ' + cs.isUserIdle);
-    lines.push('  Last activity:   ' + (cs.lastActivityTime || 'never'));
-    if (cs.hasCurrentSession) {
-      lines.push('  Session ID:      ' + cs.currentSessionId);
-      lines.push('  Category:        ' + cs.currentSessionCategory);
-      lines.push('  Started at:      ' + cs.currentSessionStartTime);
-      lines.push('  Duration so far: ' + fmtMs(cs.currentSessionDuration));
-      lines.push('  Visit count:     ' + cs.currentSessionVisitCount);
-    }
-    lines.push('');
-
-    // DB summary
-    const db = d.db;
-    lines.push('[DB Summary - Today]');
-    lines.push('  Session count:         ' + db.todaySessionCount);
-    lines.push('  Total (from sessions): ' + fmtMs(db.todayTotalTimeFromSessions) + ' (' + (db.todayTotalTimeFromSessions / 60000).toFixed(1) + ' min)');
-    lines.push('  Total (dailyStats):    ' + fmtMs(db.todayStatsTotal) + ' (' + (db.todayStatsTotal / 60000).toFixed(1) + ' min)');
-    lines.push('');
-
-    // Debug stats
-    const st = d.stats;
-    lines.push('[Debug Stats]');
-    lines.push('  Total events logged: ' + st.totalEvents);
-    lines.push('  Sessions started:    ' + st.sessionStarts);
-    lines.push('  Sessions ended:      ' + st.sessionEnds);
-    lines.push('  Focus lost events:   ' + st.focusLost);
-    lines.push('  Idle API events:     ' + st.idleEvents);
-    lines.push('');
-
-    // End reason breakdown
-    lines.push('[End Reason Breakdown]');
-    const reasons = Object.entries(st.endReasons || {}).sort((a, b) => b[1] - a[1]);
-    if (reasons.length === 0) {
-      lines.push('  (none)');
-    } else {
-      for (const [reason, count] of reasons) {
-        lines.push('  ' + reason.padEnd(35) + ' x' + count);
-      }
-    }
-    lines.push('');
-
-    // All sessions detail
-    lines.push('========================================');
-    lines.push('[Today\'s Sessions - Detail]');
-    lines.push('========================================');
-    const sessions = [...db.sessions].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
-    for (const s of sessions) {
-      lines.push('');
-      lines.push('--- Session ' + s.id + ' ---');
-      lines.push('  Category:    ' + s.category + ' (confidence: ' + (s.confidence || '?') + ', method: ' + (s.method || '?') + ')');
-      lines.push('  Start:       ' + s.startTime);
-      lines.push('  End:         ' + (s.endTime || '(active)'));
-      lines.push('  Duration:    ' + fmtMs(s.duration || 0) + ' (' + (s.durationMin || 0) + ' min)');
-      lines.push('  Visits:      ' + s.visitCount);
-      lines.push('  Active:      ' + (s.isActive ? 'YES' : 'no'));
-      lines.push('  End reason:  ' + (s.endReason || '-'));
-      lines.push('  Source:      ' + (s.source || 'tracked'));
-      lines.push('  Device:      ' + (s.deviceSource || 'local'));
-      if (s.visits && s.visits.length > 0) {
-        lines.push('  Visit list:');
-        for (const v of s.visits) {
-          lines.push('    [' + v.time + '] ' + (v.category || '') + ' | ' + v.url);
-          if (v.title) lines.push('      title: ' + v.title);
-        }
-      }
-    }
-    lines.push('');
-
-    // Full event log
-    lines.push('========================================');
-    lines.push('[Full Event Log (' + d.debugLog.length + ' entries)]');
-    lines.push('========================================');
-    for (const e of d.debugLog) {
-      const data = Object.entries(e)
-        .filter(([k]) => !['t', 'ts', 'event'].includes(k))
-        .map(([k, v]) => k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v))
-        .join('  ');
-      lines.push(e.t + '  ' + e.event.padEnd(28) + '  ' + data);
-    }
-
-    // Download
-    const text = lines.join('\n');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'detime-debug-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.txt';
-    a.click();
-    URL.revokeObjectURL(url);
-
-    downloadDebugBtn.textContent = '✓ Downloaded!';
-    setTimeout(() => {
-      downloadDebugBtn.textContent = '🐛 Download Debug Log';
-      downloadDebugBtn.disabled = false;
-    }, 2000);
-
-  } catch (error) {
-    console.error('Error downloading debug log:', error);
-    alert('Failed to download debug log');
-    downloadDebugBtn.textContent = '🐛 Download Debug Log';
-    downloadDebugBtn.disabled = false;
-  }
-}
-
-function fmtMs(ms) {
-  if (!ms || ms < 0) return '0s';
-  const sec = Math.floor(ms / 1000);
-  const min = Math.floor(sec / 60);
-  const hr = Math.floor(min / 60);
-  if (hr > 0) return hr + 'h ' + (min % 60) + 'm ' + (sec % 60) + 's';
-  if (min > 0) return min + 'm ' + (sec % 60) + 's';
-  return sec + 's';
 }

@@ -6,11 +6,9 @@ import { historyAnalyzer } from './history-analyzer.js';
 import { remoteDeviceTracker } from './remote-device-tracker.js';
 import { categoryScheduler } from './category-scheduler.js';
 import { getTodayDate, getDateFromTimestamp } from '../common/utils.js';
-import { PRODUCTIVITY_GROUPS } from '../common/constants.js';
 
 // Initialize extension
-const SW_START_TIME = Date.now();
-console.log(`deTime - Service Worker starting at ${new Date().toISOString()}...`);
+console.log('deTime - Service Worker starting...');
 
 // Initialize modules in sequence (serverSync depends on dbManager being initialized)
 sessionTracker.init()
@@ -39,11 +37,7 @@ sessionTracker.init()
   })
   .then(() => {
     console.log('Remote Device Tracker initialized');
-    // Initialize category scheduler for retrying needs_server_classification visits
-    return categoryScheduler.init();
-  })
-  .then(() => {
-    console.log('Category Scheduler initialized');
+    // Category scheduler removed - using real-time uploads instead
     console.log('deTime fully initialized');
     // Auto-run history analysis if no data exists
     return checkAndRunHistoryAnalysis();
@@ -248,8 +242,7 @@ async function handleMessage(message, sender, sendResponse) {
         break;
 
       case 'DELETE_LIMIT':
-        // Support both old (category) and new (id) format
-        await dbManager.deleteLimit(message.id || message.category);
+        await dbManager.deleteLimit(message.category);
         sendResponse({ success: true });
         break;
 
@@ -334,22 +327,6 @@ async function handleMessage(message, sender, sendResponse) {
         sendResponse({ success: true });
         break;
 
-      case 'PROCESS_RECENT_THEN_BACKGROUND':
-        console.log('[ServiceWorker] Processing recent sessions first, then background...');
-        try {
-          const recentResult = await categoryScheduler.processRecentThenBackground((progress) => {
-            chrome.runtime.sendMessage({
-              type: 'CLASSIFY_PROGRESS',
-              progress
-            }).catch(() => {});
-          });
-          sendResponse({ success: true, data: recentResult });
-        } catch (error) {
-          console.error('[ServiceWorker] Recent-then-background failed:', error);
-          sendResponse({ success: false, error: error.message });
-        }
-        break;
-
       case 'ANALYZE_HISTORY':
         const analysisResult = await historyAnalyzer.analyzeHistory(
           message.days || 30,
@@ -400,52 +377,6 @@ async function handleMessage(message, sender, sendResponse) {
         sendResponse({ success: true, data: deviceDateStats });
         break;
       }
-
-      case 'GET_DEBUG_DATA': {
-        const debugData = sessionTracker.getDebugData();
-        debugData.serviceWorker = {
-          startTime: new Date(SW_START_TIME).toISOString(),
-          uptime: Date.now() - SW_START_TIME,
-          uptimeMin: Math.round((Date.now() - SW_START_TIME) / 60000)
-        };
-        // Also get today's sessions from DB for comparison
-        const todayDate = getTodayDate();
-        const todaySessions = await dbManager.getSessionsByDate(todayDate);
-        const todayDbStats = await dbManager.getDailyStats(todayDate);
-        debugData.db = {
-          todaySessionCount: todaySessions.length,
-          todayTotalTimeFromSessions: todaySessions.reduce((sum, s) => sum + (s.duration || 0), 0),
-          todayStatsTotal: todayDbStats?.totalTime || 0,
-          sessions: todaySessions.map(s => ({
-            id: s.id,
-            category: s.category,
-            confidence: s.confidence,
-            method: s.method,
-            startTime: new Date(s.startTime).toISOString(),
-            endTime: s.endTime ? new Date(s.endTime).toISOString() : null,
-            duration: s.duration,
-            durationMin: Math.round((s.duration || 0) / 60000 * 10) / 10,
-            visitCount: s.visits?.length || 0,
-            visits: (s.visits || []).map(v => ({
-              url: v.url,
-              title: v.title,
-              category: v.category,
-              time: new Date(v.timestamp).toISOString()
-            })),
-            isActive: s.isActive,
-            endReason: s._endReason,
-            source: s.source,
-            deviceSource: s.deviceSource
-          }))
-        };
-        sendResponse({ success: true, data: debugData });
-        break;
-      }
-
-      case 'CLEAR_ALL_DATA':
-        await dbManager.clearAllData(false);
-        sendResponse({ success: true });
-        break;
 
       default:
         sendResponse({ success: false, error: 'Unknown message type' });
@@ -821,51 +752,31 @@ async function checkLimits() {
 
       const category = limit.category;
       const categoryData = categories[category];
+      const currentTime = categoryData?.time || 0;
       const dailyLimit = limit.dailyLimit;
       const alertMinutes = limit.alertMinutesBefore || 5;
       const alertThreshold = dailyLimit - (alertMinutes * 60 * 1000);
-      const targetType = limit.targetType || 'category';
-      const targetValue = limit.targetValue;
 
-      // Calculate applicable time based on target type
-      let applicableTime = 0;
-      if (targetType === 'group' && targetValue) {
-        // Sum time for all categories in this productivity group
-        const groupDef = PRODUCTIVITY_GROUPS[targetValue];
-        if (groupDef) {
-          groupDef.categories.forEach(cat => {
-            applicableTime += categories[cat]?.time || 0;
-          });
-        }
-      } else if (targetType === 'subcategory' && targetValue) {
-        applicableTime = categoryData?.subcategories?.[targetValue]?.time || 0;
-      } else if (targetType === 'domain' && targetValue) {
+      // Check if we should filter by specific sites
+      let applicableTime = currentTime;
+      if (limit.includeSites && limit.includeSites.length > 0) {
+        // Calculate time only for specified sites
+        applicableTime = 0;
         const domains = todayStats.domains || {};
-        Object.entries(domains).forEach(([domain, data]) => {
-          if (domain.toLowerCase().includes(targetValue.toLowerCase())) {
-            applicableTime += data.time || 0;
-          }
+        limit.includeSites.forEach(site => {
+          const siteLower = site.toLowerCase();
+          Object.entries(domains).forEach(([domain, data]) => {
+            if (domain.toLowerCase().includes(siteLower)) {
+              applicableTime += data.time || 0;
+            }
+          });
         });
-      } else {
-        applicableTime = categoryData?.time || 0;
       }
 
-      const limitKey = limit.id || category;
-
-      // Build display name for notifications
-      let targetName;
-      if (targetType === 'group' && targetValue) {
-        const groupDef = PRODUCTIVITY_GROUPS[targetValue];
-        targetName = `All ${groupDef?.name || targetValue}`;
-      } else {
-        const catInfo = categoryDetector.getAllCategories()[category];
-        targetName = catInfo?.name || category;
-        if (targetType === 'subcategory') {
-          targetName = `${targetValue} (${targetName})`;
-        } else if (targetType === 'domain') {
-          targetName = targetValue;
-        }
-      }
+      // Generate unique key for this limit
+      const limitKey = limit.includeSites?.length > 0
+        ? `${category}:${limit.includeSites.join(',')}`
+        : category;
 
       // Check if limit is reached
       if (applicableTime >= dailyLimit) {
@@ -873,6 +784,11 @@ async function checkLimits() {
           limitNotificationState.blocked.add(limitKey);
 
           if (notificationsEnabled) {
+            const catInfo = categoryDetector.getAllCategories()[category];
+            const targetName = limit.includeSites?.length > 0
+              ? limit.includeSites.join(', ')
+              : catInfo?.name || category;
+
             chrome.notifications.create(`limit-reached-${limitKey}`, {
               type: 'basic',
               iconUrl: 'icons/icon128.png',
@@ -889,6 +805,10 @@ async function checkLimits() {
           limitNotificationState.warned.add(limitKey);
 
           if (notificationsEnabled) {
+            const catInfo = categoryDetector.getAllCategories()[category];
+            const targetName = limit.includeSites?.length > 0
+              ? limit.includeSites.join(', ')
+              : catInfo?.name || category;
             const remainingMs = dailyLimit - applicableTime;
             const remainingMin = Math.ceil(remainingMs / 60000);
 
@@ -925,50 +845,40 @@ async function shouldBlockSite(url) {
     const domains = todayStats.domains || {};
     const categories = todayStats.categories || {};
 
-    // Detect category and subcategory for this URL
+    // Detect category for this URL
     const detection = await categoryDetector.detectCategory(url, '');
     const category = detection.category;
-    const subcategory = detection.subcategory || 'general';
 
-    // Check all limits
+    // Check limits for this category
     for (const limit of limits) {
-      if (!limit.enabled) continue;
+      if (!limit.enabled || limit.category !== category) continue;
       if (!limit.blockWhenLimitReached) continue;
 
-      const targetType = limit.targetType || 'category';
-      const targetValue = limit.targetValue;
       const dailyLimit = limit.dailyLimit;
       let applicableTime = 0;
-      let applies = false;
 
-      if (targetType === 'group' && targetValue) {
-        // Check if current category belongs to this group
-        const groupDef = PRODUCTIVITY_GROUPS[targetValue];
-        if (!groupDef || !groupDef.categories.includes(category)) continue;
-        groupDef.categories.forEach(cat => {
-          applicableTime += categories[cat]?.time || 0;
+      if (limit.includeSites && limit.includeSites.length > 0) {
+        // Check if current site is in the include list
+        const isIncluded = limit.includeSites.some(site =>
+          hostname.toLowerCase().includes(site.toLowerCase())
+        );
+        if (!isIncluded) continue;
+
+        // Calculate time for included sites
+        limit.includeSites.forEach(site => {
+          const siteLower = site.toLowerCase();
+          Object.entries(domains).forEach(([domain, data]) => {
+            if (domain.toLowerCase().includes(siteLower)) {
+              applicableTime += data.time || 0;
+            }
+          });
         });
-        applies = true;
-      } else if (limit.category !== category) {
-        continue;
-      } else if (targetType === 'subcategory' && targetValue) {
-        if (subcategory !== targetValue) continue;
-        applicableTime = categories[category]?.subcategories?.[targetValue]?.time || 0;
-        applies = true;
-      } else if (targetType === 'domain' && targetValue) {
-        if (!hostname.toLowerCase().includes(targetValue.toLowerCase())) continue;
-        Object.entries(domains).forEach(([domain, data]) => {
-          if (domain.toLowerCase().includes(targetValue.toLowerCase())) {
-            applicableTime += data.time || 0;
-          }
-        });
-        applies = true;
       } else {
+        // Use full category time
         applicableTime = categories[category]?.time || 0;
-        applies = true;
       }
 
-      if (applies && applicableTime >= dailyLimit) {
+      if (applicableTime >= dailyLimit) {
         const catInfo = categoryDetector.getAllCategories()[category];
         return {
           blocked: true,

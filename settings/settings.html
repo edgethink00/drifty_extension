@@ -186,7 +186,6 @@
           </div>
           <div class="about-item">
             <button id="exportDataBtn" class="btn-secondary">📥 Export Data</button>
-            <button id="downloadDebugBtn" class="btn-secondary">🐛 Download Debug Log</button>
             <button id="clearDataBtn" class="btn-danger">🗑️ Clear All Data</button>
           </div>
         </div>
@@ -255,30 +254,10 @@
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label>What to limit</label>
+          <label>Category</label>
           <select id="limitCategory" class="form-control">
-            <!-- Populated dynamically: groups + categories -->
+            <!-- Categories will be populated here -->
           </select>
-        </div>
-
-        <div class="form-group" id="refinementGroup" style="display: none;">
-          <label>Refine</label>
-          <div class="target-type-selector">
-            <button type="button" class="target-type-btn active" data-type="category">Entire Category</button>
-            <button type="button" class="target-type-btn" data-type="subcategory">Subcategory</button>
-            <button type="button" class="target-type-btn" data-type="domain">Domain</button>
-          </div>
-          <input type="hidden" id="limitTargetType" value="category">
-
-          <div id="subcategoryTarget" class="target-value-section" style="display: none;">
-            <select id="limitSubcategory" class="form-control">
-            </select>
-          </div>
-
-          <div id="domainTarget" class="target-value-section" style="display: none;">
-            <input type="text" id="limitDomain" class="form-control" placeholder="e.g., youtube.com">
-            <div class="filter-hint">Enter the domain you want to limit</div>
-          </div>
         </div>
 
         <div class="form-group">
@@ -291,6 +270,20 @@
             <div class="time-input-group">
               <input type="number" id="limitMinutes" class="form-control time-input" min="0" max="59" value="0">
               <span class="time-label">min</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Site Filters (Optional)</label>
+          <div class="site-filter-section">
+            <div class="site-filter-row">
+              <input type="text" id="excludeSites" class="form-control" placeholder="Exclude sites (comma separated)">
+              <div class="filter-hint">e.g., youtube.com, reddit.com</div>
+            </div>
+            <div class="site-filter-row">
+              <input type="text" id="includeSites" class="form-control" placeholder="Only include sites (comma separated)">
+              <div class="filter-hint">Leave empty to include all sites in category</div>
             </div>
           </div>
         </div>

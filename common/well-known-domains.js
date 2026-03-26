@@ -8,72 +8,72 @@
 
 export const WELL_KNOWN_DOMAINS = {
   // ============================================
-  // WORKSPACE - 업무 도구
+  // PRODUCTIVITY - 생산성
   // ============================================
   
   // 개발/코딩
-  "github.com": { category: "workspace", type: "single" },
-  "gitlab.com": { category: "workspace", type: "single" },
-  "bitbucket.org": { category: "workspace", type: "single" },
-  "stackoverflow.com": { category: "workspace", type: "single" },
-  "stackexchange.com": { category: "workspace", type: "single" },
-  "npmjs.com": { category: "workspace", type: "single" },
-  "pypi.org": { category: "workspace", type: "single" },
-  "crates.io": { category: "workspace", type: "single" },
-  "packagist.org": { category: "workspace", type: "single" },
-  "rubygems.org": { category: "workspace", type: "single" },
-  "maven.apache.org": { category: "workspace", type: "single" },
-  "nuget.org": { category: "workspace", type: "single" },
-  "hub.docker.com": { category: "workspace", type: "single" },
-  "vercel.com": { category: "workspace", type: "single" },
-  "netlify.com": { category: "workspace", type: "single" },
-  "heroku.com": { category: "workspace", type: "single" },
-  "aws.amazon.com": { category: "workspace", type: "single" },
-  "cloud.google.com": { category: "workspace", type: "single" },
-  "azure.microsoft.com": { category: "workspace", type: "single" },
-  "digitalocean.com": { category: "workspace", type: "single" },
-  "codepen.io": { category: "workspace", type: "single" },
-  "codesandbox.io": { category: "workspace", type: "single" },
-  "jsfiddle.net": { category: "workspace", type: "single" },
-  "replit.com": { category: "workspace", type: "single" },
-  "glitch.com": { category: "workspace", type: "single" },
+  "github.com": { category: "productivity", type: "single" },
+  "gitlab.com": { category: "productivity", type: "single" },
+  "bitbucket.org": { category: "productivity", type: "single" },
+  "stackoverflow.com": { category: "productivity", type: "single" },
+  "stackexchange.com": { category: "productivity", type: "single" },
+  "npmjs.com": { category: "productivity", type: "single" },
+  "pypi.org": { category: "productivity", type: "single" },
+  "crates.io": { category: "productivity", type: "single" },
+  "packagist.org": { category: "productivity", type: "single" },
+  "rubygems.org": { category: "productivity", type: "single" },
+  "maven.apache.org": { category: "productivity", type: "single" },
+  "nuget.org": { category: "productivity", type: "single" },
+  "hub.docker.com": { category: "productivity", type: "single" },
+  "vercel.com": { category: "productivity", type: "single" },
+  "netlify.com": { category: "productivity", type: "single" },
+  "heroku.com": { category: "productivity", type: "single" },
+  "aws.amazon.com": { category: "productivity", type: "single" },
+  "cloud.google.com": { category: "productivity", type: "single" },
+  "azure.microsoft.com": { category: "productivity", type: "single" },
+  "digitalocean.com": { category: "productivity", type: "single" },
+  "codepen.io": { category: "productivity", type: "single" },
+  "codesandbox.io": { category: "productivity", type: "single" },
+  "jsfiddle.net": { category: "productivity", type: "single" },
+  "replit.com": { category: "productivity", type: "single" },
+  "glitch.com": { category: "productivity", type: "single" },
   
   // 문서/협업
-  "docs.google.com": { category: "workspace", type: "single" },
-  "sheets.google.com": { category: "workspace", type: "single" },
-  "slides.google.com": { category: "workspace", type: "single" },
-  "drive.google.com": { category: "workspace", type: "single" },
-  "notion.so": { category: "workspace", type: "single" },
-  "notion.site": { category: "workspace", type: "single" },
-  "trello.com": { category: "workspace", type: "single" },
-  "asana.com": { category: "workspace", type: "single" },
-  "monday.com": { category: "workspace", type: "single" },
-  "clickup.com": { category: "workspace", type: "single" },
-  "jira.atlassian.com": { category: "workspace", type: "single" },
-  "confluence.atlassian.com": { category: "workspace", type: "single" },
-  "slack.com": { category: "workspace", type: "single" },
-  "linear.app": { category: "workspace", type: "single" },
-  "figma.com": { category: "workspace", type: "single" },
-  "miro.com": { category: "workspace", type: "single" },
-  "airtable.com": { category: "workspace", type: "single" },
-  "dropbox.com": { category: "workspace", type: "single" },
-  "box.com": { category: "workspace", type: "single" },
-  "evernote.com": { category: "workspace", type: "single" },
-  "onenote.com": { category: "workspace", type: "single" },
-  "obsidian.md": { category: "workspace", type: "single" },
+  "docs.google.com": { category: "productivity", type: "single" },
+  "sheets.google.com": { category: "productivity", type: "single" },
+  "slides.google.com": { category: "productivity", type: "single" },
+  "drive.google.com": { category: "productivity", type: "single" },
+  "notion.so": { category: "productivity", type: "single" },
+  "notion.site": { category: "productivity", type: "single" },
+  "trello.com": { category: "productivity", type: "single" },
+  "asana.com": { category: "productivity", type: "single" },
+  "monday.com": { category: "productivity", type: "single" },
+  "clickup.com": { category: "productivity", type: "single" },
+  "jira.atlassian.com": { category: "productivity", type: "single" },
+  "confluence.atlassian.com": { category: "productivity", type: "single" },
+  "slack.com": { category: "productivity", type: "single" },
+  "linear.app": { category: "productivity", type: "single" },
+  "figma.com": { category: "productivity", type: "single" },
+  "miro.com": { category: "productivity", type: "single" },
+  "airtable.com": { category: "productivity", type: "single" },
+  "dropbox.com": { category: "productivity", type: "single" },
+  "box.com": { category: "productivity", type: "single" },
+  "evernote.com": { category: "productivity", type: "single" },
+  "onenote.com": { category: "productivity", type: "single" },
+  "obsidian.md": { category: "productivity", type: "single" },
   
   // 이메일
-  "mail.google.com": { category: "workspace", type: "single" },
-  "outlook.live.com": { category: "workspace", type: "single" },
-  "outlook.office.com": { category: "workspace", type: "single" },
-  "mail.yahoo.com": { category: "workspace", type: "single" },
-  "protonmail.com": { category: "workspace", type: "single" },
-  "mail.naver.com": { category: "workspace", type: "single" },
-  "mail.daum.net": { category: "workspace", type: "single" },
+  "mail.google.com": { category: "productivity", type: "single" },
+  "outlook.live.com": { category: "productivity", type: "single" },
+  "outlook.office.com": { category: "productivity", type: "single" },
+  "mail.yahoo.com": { category: "productivity", type: "single" },
+  "protonmail.com": { category: "productivity", type: "single" },
+  "mail.naver.com": { category: "productivity", type: "single" },
+  "mail.daum.net": { category: "productivity", type: "single" },
   
   // 캘린더/일정
-  "calendar.google.com": { category: "workspace", type: "single" },
-  "calendly.com": { category: "workspace", type: "single" },
+  "calendar.google.com": { category: "productivity", type: "single" },
+  "calendly.com": { category: "productivity", type: "single" },
   
   // ============================================
   // EDUCATION - 교육/학습
@@ -215,7 +215,7 @@ export const WELL_KNOWN_DOMAINS = {
   "twitter.com": { category: "social", type: "single" },
   "x.com": { category: "social", type: "single" },
   "threads.net": { category: "social", type: "single" },
-  "tiktok.com": { category: "entertainment", type: "single" },
+  "tiktok.com": { category: "social", type: "single" },
   "snapchat.com": { category: "social", type: "single" },
   "pinterest.com": { category: "social", type: "single" },
   "tumblr.com": { category: "social", type: "single" },
@@ -408,7 +408,6 @@ export const WELL_KNOWN_DOMAINS = {
     type: "multipurpose",
     allowedCategories: ["entertainment", "music", "learning", "games", "news"],
     pathRules: {
-      "/shorts/": "entertainment",
       "/gaming": "games",
       "/feed/trending": "entertainment"
     }
@@ -432,7 +431,7 @@ export const WELL_KNOWN_DOMAINS = {
   "reddit.com": {
     category: "social",
     type: "multipurpose",
-    allowedCategories: ["social", "entertainment", "news", "games", "learning", "workspace"],
+    allowedCategories: ["social", "entertainment", "news", "games", "learning", "productivity"],
     pathRules: {
       "/r/learnprogramming": "learning",
       "/r/programming": "learning",
@@ -467,7 +466,7 @@ export const WELL_KNOWN_DOMAINS = {
   "naver.com": {
     category: "other",
     type: "multipurpose",
-    allowedCategories: ["news", "shopping", "entertainment", "social", "workspace"],
+    allowedCategories: ["news", "shopping", "entertainment", "social", "productivity"],
     pathRules: {
       "/shopping": "shopping",
       "/news": "news",
@@ -495,19 +494,19 @@ export const WELL_KNOWN_DOMAINS = {
   "tistory.com": {
     category: "other",
     type: "multipurpose",
-    allowedCategories: ["learning", "entertainment", "news", "workspace"]
+    allowedCategories: ["learning", "entertainment", "news", "productivity"]
   },
   
   "medium.com": {
     category: "other",
     type: "multipurpose",
-    allowedCategories: ["learning", "news", "workspace", "entertainment"]
+    allowedCategories: ["learning", "news", "productivity", "entertainment"]
   },
   
   "velog.io": {
     category: "learning",
     type: "multipurpose",
-    allowedCategories: ["learning", "workspace"]
+    allowedCategories: ["learning", "productivity"]
   },
   
   "brunch.co.kr": {
@@ -519,18 +518,18 @@ export const WELL_KNOWN_DOMAINS = {
   "google.com": {
     category: "other",
     type: "multipurpose",
-    allowedCategories: ["workspace", "learning", "shopping", "news", "entertainment"],
+    allowedCategories: ["productivity", "learning", "shopping", "news", "entertainment"],
     pathRules: {
       "/search": "other",
       "/maps": "other",
-      "/translate": "workspace"
+      "/translate": "productivity"
     }
   },
   
   "bing.com": {
     category: "other",
     type: "multipurpose",
-    allowedCategories: ["workspace", "learning", "shopping", "news", "entertainment"]
+    allowedCategories: ["productivity", "learning", "shopping", "news", "entertainment"]
   },
   
   "namu.wiki": {

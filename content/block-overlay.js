@@ -74,6 +74,7 @@
   }
 
   function shouldHideMisclassBtn(info) {
+    if (info.focusMode) return false;
     if (info.limitId?.startsWith('site:') || info.limitId?.startsWith('sites:') || info.limitId?.startsWith('mixed:')) return true;
     if (info.includeSites?.length > 0 && (!info.includeCategories || info.includeCategories.length === 0)) return true;
     return false;
@@ -83,8 +84,9 @@
     // Remove existing overlay
     hideBlockOverlay();
 
-    const { categoryName, limit, used, reason } = blockInfo;
+    const { categoryName, limit, used, focusMode, reason } = blockInfo;
     const showMisclassBtn = !shouldHideMisclassBtn(blockInfo);
+    const isDowntime = reason === 'downtime';
 
     // Create overlay
     overlayElement = document.createElement('div');
@@ -99,7 +101,7 @@
       document.documentElement.appendChild(overlayElement);
     }
 
-    startMidnightCountdown();
+    if (!focusMode && !isDowntime) startMidnightCountdown();
 
     // Attach click handlers directly to buttons after a small delay
     requestAnimationFrame(() => {
@@ -146,22 +148,29 @@
     });
   }
 
-  function getBlockIcon(reason) {
+  function getBlockIcon(focusMode, reason) {
+    if (focusMode) return '🍅';
     switch (reason) {
+      case 'downtime': return '🌙';
       case 'whitelist': return '🔒';
       default: return '⛔';
     }
   }
 
-  function getBlockTitle(reason) {
+  function getBlockTitle(focusMode, reason) {
+    if (focusMode) return 'Stay Focused!';
     switch (reason) {
+      case 'downtime': return 'Time to Rest';
       case 'whitelist': return 'Site Not Allowed';
       default: return 'Time Limit Reached';
     }
   }
 
-  function getBlockSubtitle(reason, categoryName) {
+  function getBlockSubtitle(focusMode, reason, categoryName, downtimeEnd) {
+    if (focusMode) return 'This site is blocked during your focus session';
     switch (reason) {
+      case 'downtime': 
+        return `<strong>${categoryName || 'This category'}</strong> is blocked during downtime hours`;
       case 'whitelist':
         return 'This site is not on your whitelist';
       default:
@@ -170,7 +179,7 @@
   }
 
   function createOverlayHTML(blockInfo, showMisclassBtn) {
-    const { categoryName, limit, used, reason } = blockInfo;
+    const { categoryName, limit, used, focusMode, reason, downtimeEnd } = blockInfo;
     
     return `
       <style>
@@ -399,10 +408,12 @@
       </style>
       
       <div class="wst-container">
-        <div class="wst-icon">${getBlockIcon(reason)}</div>
+        <div class="wst-icon">${getBlockIcon(focusMode, reason)}</div>
+        ${focusMode ? '<div class="wst-badge">🎯 Focus Mode Active</div>' : ''}
+        ${reason === 'downtime' ? '<div class="wst-badge">😴 Downtime Active</div>' : ''}
         ${reason === 'whitelist' ? '<div class="wst-badge">🔒 Whitelist Mode</div>' : ''}
-        <div class="wst-title">${getBlockTitle(reason)}</div>
-        <div class="wst-subtitle">${getBlockSubtitle(reason, categoryName)}</div>
+        <div class="wst-title">${getBlockTitle(focusMode, reason)}</div>
+        <div class="wst-subtitle">${getBlockSubtitle(focusMode, reason, categoryName, downtimeEnd)}</div>
         
         ${reason === 'usage_limit' ? `
           <div class="wst-stats">
@@ -419,6 +430,11 @@
               <div class="wst-stat-value wst-yellow" id="wst-countdown">${formatCountdown(getTimeUntilMidnight())}</div>
               <div class="wst-hint">until midnight</div>
             </div>
+          </div>
+        ` : reason === 'downtime' ? `
+          <div class="wst-info">
+            <div class="wst-category">${categoryName || 'Blocked Category'}</div>
+            <div class="wst-hint" style="margin-top: 8px;">Downtime ends at ${downtimeEnd || '7:00 AM'}</div>
           </div>
         ` : reason === 'whitelist' ? `
           <div class="wst-info">
@@ -448,7 +464,7 @@
           ` : ''}
         </div>
         
-        ${showMisclassBtn && reason !== 'whitelist' ? `
+        ${showMisclassBtn && !['downtime', 'whitelist'].includes(reason) ? `
           <div class="wst-actions">
             <button type="button" class="wst-btn wst-btn-gray wst-btn-small" data-wst-action="misclass">🏷️ This isn't ${categoryName}?</button>
           </div>
@@ -546,15 +562,26 @@
         if (!showMisclassBtn) return;
         console.log('WST: Executing misclass');
         
-        const msg = `Mark "${domain}" as not ${blockInfo.categoryName}?\n\nThis will classify this site as "Other" and unblock it.`;
-
+        const msg = blockInfo.focusMode
+          ? `Allow "${domain}" for this focus session?`
+          : `Mark "${domain}" as not ${blockInfo.categoryName}?\n\nThis will classify this site as "Other" and unblock it.`;
+        
         if (confirm(msg)) {
-          sendMessage({ type: 'SAVE_SITE_OVERRIDE', override: { domain, category: 'other' } }, () => {
-            hideBlockOverlay();
-            isBlocked = false;
-            // Use location.replace to avoid beforeunload confirmation dialogs
-            location.replace(location.href);
-          });
+          if (blockInfo.focusMode) {
+            sendMessage({ type: 'ALLOW_SITE_IN_FOCUS_MODE', domain }, () => {
+              hideBlockOverlay();
+              isBlocked = false;
+              // Use location.replace to avoid beforeunload confirmation dialogs
+              location.replace(location.href);
+            });
+          } else {
+            sendMessage({ type: 'SAVE_SITE_OVERRIDE', override: { domain, category: 'other' } }, () => {
+              hideBlockOverlay();
+              isBlocked = false;
+              // Use location.replace to avoid beforeunload confirmation dialogs
+              location.replace(location.href);
+            });
+          }
         }
         break;
     }

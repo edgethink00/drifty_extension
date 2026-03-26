@@ -55,8 +55,8 @@ export const CATEGORIES = {
       '음악', '노래', '뮤직'
     ]
   },
-  workspace: {
-    name: 'Workspace',
+  productivity: {
+    name: 'Productivity',
     icon: '💼',
     color: '#74B9FF',  // Productive - Pastel Blue
     domains: [
@@ -210,12 +210,13 @@ export const SESSION_STATES = {
 // Database configuration
 export const DB_CONFIG = {
   NAME: 'WebActivityTracker',
-  VERSION: 5,  // Incremented for limits store migration (id keyPath)
+  VERSION: 4,  // Incremented for domainCategories store
   STORES: {
     SESSIONS: 'sessions',
     DAILY_STATS: 'dailyStats',
     LIMITS: 'limits',
     SETTINGS: 'settings',
+    FOCUS_SESSIONS: 'focusSessions',
     CUSTOM_CATEGORIES: 'customCategories',
     SITE_OVERRIDES: 'siteOverrides',
     DOMAIN_CATEGORIES: 'domainCategories'  // 서버 기반 도메인 카테고리 캐시
@@ -224,7 +225,6 @@ export const DB_CONFIG = {
 
 // Default settings
 export const DEFAULT_SETTINGS = {
-  displayName: '',
   weekStartDay: 1,  // 0 = Sunday, 1 = Monday (default), 6 = Saturday
   privacyMode: {
     enabled: false,
@@ -275,19 +275,19 @@ export const TIME_FORMAT = {
 export const PRODUCTIVITY_GROUPS = {
   productive: {
     name: 'Productive',
-    categories: ['workspace', 'learning'],
+    categories: ['productivity', 'learning'],
     color: '#007AFF',  // Blue
     icon: '✓'
   },
   unproductive: {
     name: 'Unproductive',
-    categories: ['social', 'entertainment', 'games', 'adult'],
+    categories: ['social', 'entertainment', 'music', 'games', 'adult'],
     color: '#FF9500',  // Orange
     icon: '✗'
   },
   neutral: {
     name: 'Neutral',
-    categories: ['shopping', 'news', 'music', 'other'],
+    categories: ['shopping', 'news', 'other'],
     color: '#8E8E93',  // Gray
     icon: '−'
   }

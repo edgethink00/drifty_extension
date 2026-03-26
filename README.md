@@ -29,7 +29,7 @@
 ## 🏗️ 시스템 구조
 
 ```
-/wst
+/detime-extension
 ├── manifest.json              # Chrome Extension 설정
 ├── background/                # Background Service Worker
 │   ├── service-worker.js     # 메인 서비스 워커

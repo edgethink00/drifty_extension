@@ -210,7 +210,7 @@ export const SESSION_STATES = {
 // Database configuration
 export const DB_CONFIG = {
   NAME: 'WebActivityTracker',
-  VERSION: 4,  // Incremented for domainCategories store
+  VERSION: 5,  // Incremented for limits store migration (id keyPath)
   STORES: {
     SESSIONS: 'sessions',
     DAILY_STATS: 'dailyStats',
@@ -225,6 +225,7 @@ export const DB_CONFIG = {
 
 // Default settings
 export const DEFAULT_SETTINGS = {
+  displayName: '',
   weekStartDay: 1,  // 0 = Sunday, 1 = Monday (default), 6 = Saturday
   privacyMode: {
     enabled: false,
@@ -281,13 +282,13 @@ export const PRODUCTIVITY_GROUPS = {
   },
   unproductive: {
     name: 'Unproductive',
-    categories: ['social', 'entertainment', 'music', 'games', 'adult'],
+    categories: ['social', 'entertainment', 'games', 'adult'],
     color: '#FF9500',  // Orange
     icon: '✗'
   },
   neutral: {
     name: 'Neutral',
-    categories: ['shopping', 'news', 'other'],
+    categories: ['shopping', 'news', 'music', 'other'],
     color: '#8E8E93',  // Gray
     icon: '−'
   }

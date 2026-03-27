@@ -1,4 +1,4 @@
-import { SESSION_STATES, SESSION_TIMEOUTS } from '../common/constants.js';
+import { SESSION_STATES, SESSION_TIMEOUTS, PRODUCTIVITY_GROUPS } from '../common/constants.js';
 import { generateId, getTodayDate } from '../common/utils.js';
 import { categoryDetector } from './category-detector.js';
 import { dbManager } from './db-manager.js';
@@ -10,6 +10,23 @@ const USER_IDLE_THRESHOLD = 120;
 // Store recent metadata for URLs (from content script)
 const recentMetadata = new Map();
 
+// ========== DEBUG LOGGING (전부 기록, 제한 없음) ==========
+let debugSessionLog = [];
+
+function debugLog(event, data = {}) {
+  const entry = {
+    t: new Date().toISOString(),
+    ts: Date.now(),
+    event,
+    ...data
+  };
+  debugSessionLog.push(entry);
+  console.log(`[DEBUG:Session] ${event}`, JSON.stringify(data));
+}
+
+debugLog('MODULE_LOADED', { msg: 'session-tracker.js loaded' });
+// ==========================================================
+
 class SessionTracker {
   constructor() {
     this.currentSession = null;
@@ -17,6 +34,7 @@ class SessionTracker {
     this.lastActivityTime = null;
     this.timeoutId = null;
     this.isUserIdle = false;
+    this._sessionEndReasons = {}; // Track why sessions ended
   }
 
   /**
@@ -26,6 +44,12 @@ class SessionTracker {
    */
   async handlePageMetadata(metadata, tab) {
     if (!metadata?.url) return;
+    debugLog('PAGE_METADATA', {
+      url: metadata.url?.substring(0, 100),
+      platform: metadata.platform,
+      tabId: tab?.id,
+      hasCurrentSession: !!this.currentSession
+    });
 
     // Store metadata
     recentMetadata.set(metadata.url, {
@@ -76,6 +100,11 @@ class SessionTracker {
     const oldConfidence = this.currentSession.confidence || 0.5;
 
     if (newResult.category !== oldCategory || newResult.confidence > oldConfidence) {
+      debugLog('RECLASSIFY', {
+        oldCategory, oldConfidence,
+        newCategory: newResult.category, newConfidence: newResult.confidence, method: newResult.method,
+        url: metadata.url?.substring(0, 100)
+      });
       console.log('[SessionTracker] Reclassifying session:', {
         old: { category: oldCategory, confidence: oldConfidence },
         new: { category: newResult.category, confidence: newResult.confidence, method: newResult.method }
@@ -103,8 +132,10 @@ class SessionTracker {
    * Initialize session tracker
    */
   async init() {
+    debugLog('INIT_START', { idleThreshold: USER_IDLE_THRESHOLD, sessionTimeouts: SESSION_TIMEOUTS });
     await dbManager.init();
     this.setupListeners();
+    debugLog('INIT_DONE');
     console.log('Session Tracker initialized');
   }
 
@@ -115,12 +146,14 @@ class SessionTracker {
     // Listen for tab activation
     chrome.tabs.onActivated.addListener(async (activeInfo) => {
       const tab = await chrome.tabs.get(activeInfo.tabId);
+      debugLog('TAB_ACTIVATED', { tabId: activeInfo.tabId, url: tab?.url?.substring(0, 80) });
       this.handleTabChange(tab);
     });
 
     // Listen for tab updates (URL changes, title changes)
     chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       if (changeInfo.status === 'complete' && tab.active) {
+        debugLog('TAB_UPDATED', { tabId, url: tab?.url?.substring(0, 80) });
         this.handleTabChange(tab);
       }
     });
@@ -128,9 +161,15 @@ class SessionTracker {
     // Listen for window focus changes
     chrome.windows.onFocusChanged.addListener(async (windowId) => {
       if (windowId === chrome.windows.WINDOW_ID_NONE) {
+        debugLog('WINDOW_FOCUS_LOST', {
+          hadSession: !!this.currentSession,
+          sessionCategory: this.currentSession?.category,
+          sessionDurationSoFar: this.currentSession ? (Date.now() - this.currentSession.startTime) : 0
+        });
         // Browser lost focus
-        this.handleIdle();
+        this.handleIdle('window_focus_lost');
       } else {
+        debugLog('WINDOW_FOCUS_GAINED', { windowId });
         // Browser gained focus
         const [tab] = await chrome.tabs.query({ active: true, windowId });
         if (tab) {
@@ -144,6 +183,12 @@ class SessionTracker {
 
     // Listen for user idle state changes
     chrome.idle.onStateChanged.addListener((newState) => {
+      debugLog('IDLE_STATE_CHANGED', {
+        newState,
+        hadSession: !!this.currentSession,
+        sessionCategory: this.currentSession?.category,
+        sessionDurationSoFar: this.currentSession ? (Date.now() - this.currentSession.startTime) : 0
+      });
       console.log('User idle state changed:', newState);
 
       if (newState === 'active') {
@@ -155,7 +200,7 @@ class SessionTracker {
         this.isUserIdle = true;
         if (this.currentSession) {
           console.log('User idle/locked - ending session');
-          this.endCurrentSession();
+          this.endCurrentSession('idle_api_' + newState);
         }
       }
     });
@@ -167,6 +212,13 @@ class SessionTracker {
     chrome.alarms.create('saveSession', { periodInMinutes: 1 });
 
     chrome.alarms.onAlarm.addListener((alarm) => {
+      debugLog('ALARM', {
+        name: alarm.name,
+        hasSession: !!this.currentSession,
+        sessionCategory: this.currentSession?.category,
+        durationSoFar: this.currentSession ? Math.round((Date.now() - this.currentSession.startTime) / 1000) + 's' : null,
+        isUserIdle: this.isUserIdle
+      });
       if (alarm.name === 'checkIdle') {
         this.checkIdleTimeout();
       } else if (alarm.name === 'saveSession') {
@@ -187,6 +239,14 @@ class SessionTracker {
       chrome.idle.queryState(USER_IDLE_THRESHOLD, resolve);
     });
 
+    debugLog('SAVE_ACTIVE_CHECK', {
+      idleState,
+      sessionId: this.currentSession?.id,
+      category: this.currentSession?.category,
+      durationSoFar: this.currentSession ? (Date.now() - this.currentSession.startTime) : 0,
+      visitCount: this.currentSession?.visits?.length
+    });
+
     if (idleState === 'active') {
       // User is actually active (mouse/keyboard input)
       this.lastActivityTime = Date.now();
@@ -194,9 +254,10 @@ class SessionTracker {
     } else {
       // User is idle or locked - end session if still running
       if (!this.isUserIdle) {
+        debugLog('SAVE_ACTIVE_ENDING_IDLE', { idleState });
         console.log('User became idle during save check - ending session');
         this.isUserIdle = true;
-        await this.endCurrentSession();
+        await this.endCurrentSession('save_check_idle_' + idleState);
         return;
       }
     }
@@ -221,6 +282,11 @@ class SessionTracker {
     // Update daily stats with current session included
     await dbManager.calculateDailyStats(this.currentSession.date);
 
+    debugLog('SAVE_ACTIVE_OK', {
+      sessionId: this.currentSession.id,
+      duration: Math.round(currentDuration / 60000) + 'm',
+      durationMs: currentDuration
+    });
     console.log('Saved active session:', { duration: Math.round(currentDuration / 60000) + 'm' });
   }
 
@@ -233,15 +299,28 @@ class SessionTracker {
     if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
       // End current session when navigating to non-trackable pages
       if (this.currentSession) {
+        debugLog('NON_TRACKABLE_URL', {
+          url: tab.url?.substring(0, 80),
+          sessionCategory: this.currentSession.category,
+          sessionDurationSoFar: Date.now() - this.currentSession.startTime
+        });
         console.log('Ending session - navigated to non-trackable URL:', tab.url);
-        await this.endCurrentSession();
+        await this.endCurrentSession('non_trackable_url');
       }
       return;
     }
 
+    // Deduplicate rapid calls for the same URL (e.g. onActivated + onUpdated firing together)
+    const now = Date.now();
+    if (this._lastHandledUrl === tab.url && now - (this._lastHandledTime || 0) < 2000) {
+      debugLog('TAB_CHANGE_DEDUP', { url: tab.url?.substring(0, 80), gap: now - (this._lastHandledTime || 0) });
+      return;
+    }
+    this._lastHandledUrl = tab.url;
+    this._lastHandledTime = now;
+
     // Tab change = user activity, reset idle state
     this.isUserIdle = false;
-    const now = Date.now();
 
     // Try to get stored metadata for this URL
     const metadata = this.getMetadataForUrl(tab.url);
@@ -300,6 +379,7 @@ class SessionTracker {
     const { category, timestamp } = visit;
 
     if (this.sessionState === SESSION_STATES.IDLE) {
+      debugLog('PROCESS_VISIT_NEW', { category, url: visit.url?.substring(0, 80), reason: 'state_idle' });
       // Start new session
       await this.startNewSession(visit);
     } else if (this.currentSession) {
@@ -308,21 +388,30 @@ class SessionTracker {
 
       if (category === this.currentSession.category) {
         // Same category - continue CORE session
+        debugLog('PROCESS_VISIT_CONTINUE', { category, timeSinceLastVisit, url: visit.url?.substring(0, 80) });
         this.sessionState = SESSION_STATES.CORE;
         this.addVisitToCurrentSession(visit);
       } else if (categoryDetector.areRelated(category, this.currentSession.category)) {
         // Related category - EXTENDED session
         if (timeSinceLastVisit < SESSION_TIMEOUTS.EXTENDED) {
+          debugLog('PROCESS_VISIT_EXTENDED', { newCat: category, oldCat: this.currentSession.category, timeSinceLastVisit });
           this.sessionState = SESSION_STATES.EXTENDED;
           this.addVisitToCurrentSession(visit);
         } else {
+          debugLog('PROCESS_VISIT_TIMEOUT_RELATED', { newCat: category, oldCat: this.currentSession.category, timeSinceLastVisit, timeout: SESSION_TIMEOUTS.EXTENDED });
           // Too much time passed - start new session
-          await this.endCurrentSession();
+          await this.endCurrentSession('related_timeout');
           await this.startNewSession(visit);
         }
       } else {
         // Different unrelated category - end current and start new
-        await this.endCurrentSession();
+        debugLog('PROCESS_VISIT_NEW_CATEGORY', {
+          oldCat: this.currentSession.category,
+          newCat: category,
+          oldSessionDuration: timestamp - this.currentSession.startTime,
+          url: visit.url?.substring(0, 80)
+        });
+        await this.endCurrentSession('category_change_' + category);
         await this.startNewSession(visit);
       }
     }
@@ -357,6 +446,15 @@ class SessionTracker {
 
     this.sessionState = SESSION_STATES.CORE;
 
+    debugLog('SESSION_STARTED', {
+      sessionId: this.currentSession.id,
+      category: this.currentSession.category,
+      confidence: this.currentSession.confidence,
+      method: this.currentSession.method,
+      url: visit.url?.substring(0, 80),
+      time: new Date(visit.timestamp).toISOString()
+    });
+
     console.log('Started new session:', {
       id: this.currentSession.id,
       category: this.currentSession.category,
@@ -375,17 +473,35 @@ class SessionTracker {
   addVisitToCurrentSession(visit) {
     if (!this.currentSession) return;
 
+    // Skip duplicate: same URL as the last visit
+    const lastVisit = this.currentSession.visits[this.currentSession.visits.length - 1];
+    if (lastVisit && lastVisit.url === visit.url) {
+      debugLog('VISIT_DEDUP', { url: visit.url?.substring(0, 80) });
+      this.currentSession.lastVisitTime = visit.timestamp;
+      if (visit.title) lastVisit.title = visit.title;
+      return;
+    }
+
     this.currentSession.visits.push(visit);
     this.currentSession.lastVisitTime = visit.timestamp;
 
+    debugLog('VISIT_ADDED', {
+      url: visit.url?.substring(0, 80),
+      category: visit.category,
+      totalVisits: this.currentSession.visits.length,
+      sessionDurationSoFar: visit.timestamp - this.currentSession.startTime
+    });
     console.log('Added visit to session:', visit);
   }
 
   /**
    * End current session and save to database
    */
-  async endCurrentSession() {
-    if (!this.currentSession) return;
+  async endCurrentSession(reason = 'unknown') {
+    if (!this.currentSession) {
+      debugLog('END_SESSION_NOOP', { reason });
+      return;
+    }
 
     // Save session to local variable to prevent race conditions
     const sessionToSave = this.currentSession;
@@ -402,6 +518,20 @@ class SessionTracker {
 
     // Mark session as completed (not active)
     sessionToSave.isActive = false;
+
+    // Track end reason
+    sessionToSave._endReason = reason;
+
+    debugLog('END_SESSION', {
+      reason,
+      sessionId: sessionToSave.id,
+      category: sessionToSave.category,
+      durationMs: sessionToSave.duration,
+      durationMin: Math.round(sessionToSave.duration / 60000 * 10) / 10,
+      visitCount: sessionToSave.visits?.length,
+      startTime: new Date(sessionToSave.startTime).toISOString(),
+      endTime: new Date(sessionToSave.endTime).toISOString()
+    });
 
     console.log('Ending session:', sessionToSave);
 
@@ -424,9 +554,15 @@ class SessionTracker {
   /**
    * Handle idle state (no activity)
    */
-  async handleIdle() {
+  async handleIdle(reason = 'unknown') {
+    debugLog('HANDLE_IDLE', {
+      reason,
+      hadSession: !!this.currentSession,
+      sessionCategory: this.currentSession?.category,
+      sessionDurationSoFar: this.currentSession ? (Date.now() - this.currentSession.startTime) : 0
+    });
     if (this.currentSession) {
-      await this.endCurrentSession();
+      await this.endCurrentSession('idle_' + reason);
     }
     this.sessionState = SESSION_STATES.IDLE;
   }
@@ -449,8 +585,9 @@ class SessionTracker {
     }
 
     if (timeSinceActivity > timeout) {
+      debugLog('IDLE_TIMEOUT_REACHED', { timeSinceActivity, timeout, state: this.sessionState });
       console.log('Idle timeout reached');
-      this.handleIdle();
+      this.handleIdle('timeout_check');
     }
   }
 
@@ -471,7 +608,8 @@ class SessionTracker {
     }
 
     this.timeoutId = setTimeout(() => {
-      this.handleIdle();
+      debugLog('TIMEOUT_FIRED', { timeout, state: this.sessionState });
+      this.handleIdle('timeout_fired');
     }, timeout);
   }
 
@@ -482,25 +620,59 @@ class SessionTracker {
     if (!this.currentSession) return;
 
     const category = this.currentSession.category;
-    const limit = await dbManager.getLimit(category);
+    const subcategory = this.currentSession.subcategory || 'general';
+    const allLimits = await dbManager.getAllLimits();
+    if (!allLimits || allLimits.length === 0) return;
 
-    if (!limit || !limit.enabled) return;
+    // Filter limits relevant to this session's category (including group limits)
+    const relevantLimits = allLimits.filter(l => {
+      if (!l.enabled) return false;
+      if (l.targetType === 'group' && l.targetValue) {
+        const groupDef = PRODUCTIVITY_GROUPS[l.targetValue];
+        return groupDef && groupDef.categories.includes(category);
+      }
+      return l.category === category;
+    });
+    if (relevantLimits.length === 0) return;
 
-    // Get today's usage for this category
     const stats = await dbManager.getDailyStats(getTodayDate());
-    const categoryTime = stats?.categories?.[category]?.time || 0;
 
-    // Check if limit is reached
-    if (categoryTime >= limit.dailyLimit) {
-      console.log('Time limit reached for category:', category);
-      this.currentSession.blocked = true;
+    for (const limit of relevantLimits) {
+      const targetType = limit.targetType || 'category';
+      let applicableTime = 0;
 
-      // Show notification or blocking page
-      await this.showLimitReached(category, categoryTime, limit.dailyLimit);
-    } else if (limit.alertAt && categoryTime >= limit.dailyLimit * limit.alertAt) {
-      // Show warning notification
-      const remaining = limit.dailyLimit - categoryTime;
-      await this.showLimitWarning(category, remaining);
+      if (targetType === 'group' && limit.targetValue) {
+        const groupDef = PRODUCTIVITY_GROUPS[limit.targetValue];
+        if (groupDef) {
+          groupDef.categories.forEach(cat => {
+            applicableTime += stats?.categories?.[cat]?.time || 0;
+          });
+        }
+      } else if (targetType === 'subcategory' && limit.targetValue) {
+        if (subcategory !== limit.targetValue) continue;
+        applicableTime = stats?.categories?.[category]?.subcategories?.[limit.targetValue]?.time || 0;
+      } else if (targetType === 'domain' && limit.targetValue) {
+        const domain = this.currentSession.domain || '';
+        if (!domain.toLowerCase().includes(limit.targetValue.toLowerCase())) continue;
+        const domains = stats?.domains || {};
+        Object.entries(domains).forEach(([d, data]) => {
+          if (d.toLowerCase().includes(limit.targetValue.toLowerCase())) {
+            applicableTime += data.time || 0;
+          }
+        });
+      } else {
+        applicableTime = stats?.categories?.[category]?.time || 0;
+      }
+
+      if (applicableTime >= limit.dailyLimit) {
+        console.log('Time limit reached:', limit.id);
+        this.currentSession.blocked = true;
+        await this.showLimitReached(category, applicableTime, limit.dailyLimit);
+        return;
+      } else if (limit.alertAt && applicableTime >= limit.dailyLimit * limit.alertAt) {
+        const remaining = limit.dailyLimit - applicableTime;
+        await this.showLimitWarning(category, remaining);
+      }
     }
   }
 
@@ -551,6 +723,39 @@ class SessionTracker {
       session: this.currentSession,
       state: this.sessionState,
       lastActivityTime: this.lastActivityTime
+    };
+  }
+
+  /**
+   * Get debug data for diagnostics
+   */
+  getDebugData() {
+    return {
+      debugLog: debugSessionLog,
+      currentState: {
+        sessionState: this.sessionState,
+        isUserIdle: this.isUserIdle,
+        lastActivityTime: this.lastActivityTime ? new Date(this.lastActivityTime).toISOString() : null,
+        hasCurrentSession: !!this.currentSession,
+        currentSessionId: this.currentSession?.id,
+        currentSessionCategory: this.currentSession?.category,
+        currentSessionStartTime: this.currentSession ? new Date(this.currentSession.startTime).toISOString() : null,
+        currentSessionDuration: this.currentSession ? (Date.now() - this.currentSession.startTime) : 0,
+        currentSessionVisitCount: this.currentSession?.visits?.length || 0
+      },
+      stats: {
+        totalEvents: debugSessionLog.length,
+        sessionStarts: debugSessionLog.filter(e => e.event === 'SESSION_STARTED').length,
+        sessionEnds: debugSessionLog.filter(e => e.event === 'END_SESSION').length,
+        endReasons: debugSessionLog
+          .filter(e => e.event === 'END_SESSION')
+          .reduce((acc, e) => {
+            acc[e.reason] = (acc[e.reason] || 0) + 1;
+            return acc;
+          }, {}),
+        focusLost: debugSessionLog.filter(e => e.event === 'WINDOW_FOCUS_LOST').length,
+        idleEvents: debugSessionLog.filter(e => e.event === 'IDLE_STATE_CHANGED').length
+      }
     };
   }
 }

@@ -8,7 +8,7 @@
 
 export const WELL_KNOWN_DOMAINS = {
   // ============================================
-  // PRODUCTIVITY - 생산성
+  // PRODUCTIVITY - 업무 도구
   // ============================================
   
   // 개발/코딩
@@ -215,7 +215,7 @@ export const WELL_KNOWN_DOMAINS = {
   "twitter.com": { category: "social", type: "single" },
   "x.com": { category: "social", type: "single" },
   "threads.net": { category: "social", type: "single" },
-  "tiktok.com": { category: "social", type: "single" },
+  "tiktok.com": { category: "entertainment", type: "single" },
   "snapchat.com": { category: "social", type: "single" },
   "pinterest.com": { category: "social", type: "single" },
   "tumblr.com": { category: "social", type: "single" },
@@ -408,6 +408,7 @@ export const WELL_KNOWN_DOMAINS = {
     type: "multipurpose",
     allowedCategories: ["entertainment", "music", "learning", "games", "news"],
     pathRules: {
+      "/shorts/": "entertainment",
       "/gaming": "games",
       "/feed/trending": "entertainment"
     }

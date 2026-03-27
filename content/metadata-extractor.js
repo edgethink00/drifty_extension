@@ -131,8 +131,10 @@
       videoId: null,
       isShorts: false,
       isMusic: false,
+      isMusicPlaylist: false,
       isLive: false,
-      category: null
+      category: null,
+      genre: null
     };
 
     try {
@@ -143,6 +145,15 @@
       // Check URL type
       data.isShorts = window.location.pathname.includes('/shorts/');
       data.isMusic = window.location.hostname === 'music.youtube.com';
+
+      // Check for music playlist prefixes (RDMM, RDAMVM, RDCLAK, RDAMPL, OLAK)
+      const listParam = urlParams.get('list') || '';
+      const musicPrefixes = ['RDMM', 'RDAMVM', 'RDCLAK', 'RDAMPL', 'OLAK'];
+      data.isMusicPlaylist = musicPrefixes.some(prefix => listParam.startsWith(prefix));
+
+      // Genre from meta itemprop (uploader-set category)
+      const genreMeta = document.querySelector('meta[itemprop="genre"]');
+      data.genre = genreMeta?.content || null;
 
       // Channel name - try multiple selectors
       const channelSelectors = [
@@ -167,7 +178,7 @@
       const liveBadge = document.querySelector('.ytp-live-badge');
       data.isLive = liveBadge?.getAttribute('disabled') === null;
 
-      // Try to get category from meta
+      // Try to get category from meta (tags, not genre)
       data.category = getMetaContent('og:video:tag');
 
     } catch (e) {
@@ -266,6 +277,8 @@
       console.log('  Video ID:', metadata.youtube.videoId);
       console.log('  Is Shorts:', metadata.youtube.isShorts);
       console.log('  Is Music:', metadata.youtube.isMusic);
+      console.log('  Is Music Playlist:', metadata.youtube.isMusicPlaylist);
+      console.log('  Genre:', metadata.youtube.genre);
       console.log('  Is Live:', metadata.youtube.isLive);
     }
     

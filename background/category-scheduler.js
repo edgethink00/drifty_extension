@@ -3,6 +3,7 @@
  *
  * 30분마다 미분류 방문을 서버에 전송하여 카테고리 분류
  * 트래픽 분산을 위해 랜덤 오프셋 사용
+ * 실패 시 exponential backoff으로 재시도
  */
 
 import { SERVER_CONFIG } from '../common/server-config.js';
@@ -14,8 +15,160 @@ import { normalizeDomain } from '../common/utils.js';
 class CategoryScheduler {
   constructor() {
     this.alarmName = 'categorize-batch';
+    this.retryAlarmName = 'categorize-retry';
     this.isProcessing = false;
+
+    // Backoff constants
+    this.BASE_BACKOFF_MS = 60_000;      // 1 minute
+    this.MAX_BACKOFF_MS = 900_000;      // 15 minutes (cap)
+    this.MAX_CONSECUTIVE_FAILURES = 10;
+    this.BATCH_RETRY_DELAY_MS = 2000;   // 2 seconds for immediate batch retry
   }
+
+  // ============================================
+  // Server Health State Management
+  // ============================================
+
+  /**
+   * Get server health state from settings
+   * @returns {Promise<Object>} Server health state with defaults
+   */
+  async _getServerHealth() {
+    const settings = await dbManager.getSettings();
+    const scheduler = settings.categoryScheduler || {};
+    return {
+      consecutiveFailures: 0,
+      lastFailureTime: null,
+      lastSuccessTime: null,
+      currentBackoffMs: 0,
+      nextRetryTime: null,
+      ...(scheduler.serverHealth || {})
+    };
+  }
+
+  /**
+   * Save server health state to settings
+   * @param {Object} health - Health state to save
+   */
+  async _saveServerHealth(health) {
+    const settings = await dbManager.getSettings();
+    if (!settings.categoryScheduler) {
+      settings.categoryScheduler = { offsetMinutes: 0, lastRun: null };
+    }
+    settings.categoryScheduler.serverHealth = health;
+    await dbManager.saveSettings(settings);
+  }
+
+  /**
+   * Update server health after a processing cycle
+   * @param {boolean} success - Whether the cycle had any successful batches
+   */
+  async _updateServerHealth(success) {
+    const health = await this._getServerHealth();
+
+    if (success) {
+      health.consecutiveFailures = 0;
+      health.currentBackoffMs = 0;
+      health.nextRetryTime = null;
+      health.lastSuccessTime = Date.now();
+    } else {
+      health.consecutiveFailures++;
+      health.lastFailureTime = Date.now();
+      health.currentBackoffMs = this._calculateBackoff(health.consecutiveFailures);
+      health.nextRetryTime = Date.now() + health.currentBackoffMs;
+    }
+
+    await this._saveServerHealth(health);
+    return health;
+  }
+
+  /**
+   * Calculate backoff delay with jitter
+   * @param {number} failures - Number of consecutive failures
+   * @returns {number} Backoff delay in milliseconds
+   */
+  _calculateBackoff(failures) {
+    if (failures <= 0) return 0;
+    const baseDelay = Math.min(
+      this.BASE_BACKOFF_MS * Math.pow(2, failures - 1),
+      this.MAX_BACKOFF_MS
+    );
+    // Add random jitter: 0% to 50% of base delay
+    const jitter = Math.random() * baseDelay * 0.5;
+    return Math.round(baseDelay + jitter);
+  }
+
+  // ============================================
+  // Retry Scheduling
+  // ============================================
+
+  /**
+   * Schedule a retry with exponential backoff
+   * Reads already-persisted health state (from _updateServerHealth) and creates alarm.
+   */
+  async _scheduleRetry() {
+    const health = await this._getServerHealth();
+
+    if (health.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES) {
+      console.log('[CategoryScheduler] Max retry attempts reached, waiting for next periodic cycle');
+      return;
+    }
+
+    const backoffMs = health.currentBackoffMs || this._calculateBackoff(health.consecutiveFailures);
+    const delayMinutes = Math.max(backoffMs / 60000, 0.5); // Chrome minimum ~30s
+
+    // Clear existing retry alarm, then create new one
+    await chrome.alarms.clear(this.retryAlarmName);
+    chrome.alarms.create(this.retryAlarmName, {
+      delayInMinutes: delayMinutes
+    });
+
+    console.log(`[CategoryScheduler] Retry scheduled in ${delayMinutes.toFixed(1)} minutes (failure #${health.consecutiveFailures})`);
+  }
+
+  /**
+   * Schedule a short follow-up to process remaining visits promptly
+   * Used after partial success or server recovery
+   * @param {number} delayMinutes - Delay before follow-up (default 0.5)
+   */
+  async _scheduleFollowUp(delayMinutes = 0.5) {
+    await chrome.alarms.clear(this.retryAlarmName);
+    chrome.alarms.create(this.retryAlarmName, { delayInMinutes: delayMinutes });
+    console.log(`[CategoryScheduler] Follow-up scheduled in ${delayMinutes} minutes`);
+  }
+
+  /**
+   * Recover retry state after service worker restart
+   */
+  async _recoverRetryState() {
+    const health = await this._getServerHealth();
+
+    if (!health.nextRetryTime) return;
+
+    const now = Date.now();
+
+    if (health.nextRetryTime <= now) {
+      // Retry was pending when service worker died — run now
+      console.log('[CategoryScheduler] Recovering missed retry, processing now');
+      // Use setTimeout to avoid blocking init()
+      setTimeout(() => this.processBatch(), 1000);
+    } else {
+      // Retry is still in the future — re-create alarm with remaining time
+      const remainingMs = health.nextRetryTime - now;
+      const delayMinutes = Math.max(remainingMs / 60000, 0.5);
+
+      await chrome.alarms.clear(this.retryAlarmName);
+      chrome.alarms.create(this.retryAlarmName, {
+        delayInMinutes: delayMinutes
+      });
+
+      console.log(`[CategoryScheduler] Recovered retry alarm, ${delayMinutes.toFixed(1)} minutes remaining`);
+    }
+  }
+
+  // ============================================
+  // Initialization
+  // ============================================
 
   /**
    * Initialize scheduler
@@ -44,15 +197,22 @@ class CategoryScheduler {
       periodInMinutes: 30
     });
 
-    // Listen for alarm
+    // Listen for both periodic and retry alarms
     chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === this.alarmName) {
+      if (alarm.name === this.alarmName || alarm.name === this.retryAlarmName) {
         this.processBatch();
       }
     });
 
+    // Recover retry state after service worker restart
+    await this._recoverRetryState();
+
     console.log('[CategoryScheduler] Initialized and alarm set');
   }
+
+  // ============================================
+  // Batch Processing
+  // ============================================
 
   /**
    * Process batch categorization
@@ -68,11 +228,21 @@ class CategoryScheduler {
     try {
       console.log('[CategoryScheduler] Starting batch categorization...');
 
+      // Read previous health state for recovery detection
+      const previousHealth = await this._getServerHealth();
+      const previousFailures = previousHealth.consecutiveFailures;
+
       // 1. Collect uncategorized visits from sessions
       const uncategorizedVisits = await this.collectUncategorizedVisits();
 
       if (uncategorizedVisits.length === 0) {
         console.log('[CategoryScheduler] No visits needing classification found');
+
+        // Clear retry state if nothing to process
+        if (previousFailures > 0) {
+          await this._updateServerHealth(true);
+          await chrome.alarms.clear(this.retryAlarmName);
+        }
 
         // Log sample of all sessions for debugging
         const allSessions = await dbManager.getAllSessions();
@@ -93,6 +263,8 @@ class CategoryScheduler {
       const BATCH_SIZE = 50;
       let totalProcessed = 0;
       let consecutiveFailures = 0;
+      let hadAnySuccess = false;
+      let hadAnyFailure = false;
       const MAX_FAILURES = 3;
 
       for (let i = 0; i < uncategorizedVisits.length; i += BATCH_SIZE) {
@@ -101,19 +273,28 @@ class CategoryScheduler {
         const totalBatches = Math.ceil(uncategorizedVisits.length / BATCH_SIZE);
         console.log(`[CategoryScheduler] Processing batch ${batchNum}/${totalBatches} (${batch.length} visits)`);
 
-        const results = await this.sendToServer(batch);
+        let results = await this.sendToServer(batch);
+
+        // Immediate retry once on failure
+        if (!results) {
+          console.log(`[CategoryScheduler] Batch ${batchNum} failed, retrying in ${this.BATCH_RETRY_DELAY_MS}ms...`);
+          await new Promise(r => setTimeout(r, this.BATCH_RETRY_DELAY_MS));
+          results = await this.sendToServer(batch);
+        }
 
         if (!results) {
           consecutiveFailures++;
-          console.error(`[CategoryScheduler] Batch ${batchNum} failed (${consecutiveFailures}/${MAX_FAILURES})`);
+          hadAnyFailure = true;
+          console.error(`[CategoryScheduler] Batch ${batchNum} failed after retry (${consecutiveFailures}/${MAX_FAILURES})`);
           if (consecutiveFailures >= MAX_FAILURES) {
             console.error('[CategoryScheduler] Too many consecutive failures, stopping');
             break;
           }
-          continue; // Skip failed batch, try next
+          continue; // Skip failed batch — visits remain uncategorized in DB for next cycle
         }
 
         consecutiveFailures = 0; // Reset on success
+        hadAnySuccess = true;
         console.log(`[CategoryScheduler] Received ${results.length} classification results`);
 
         // 3. Update sessions and cache
@@ -121,22 +302,41 @@ class CategoryScheduler {
         totalProcessed += results.length;
       }
 
-      // 4. Recalculate daily stats for dates that had changes
+      // 4. Update server health and manage retry scheduling
+      if (hadAnySuccess) {
+        await this._updateServerHealth(true);
+        await chrome.alarms.clear(this.retryAlarmName);
+      } else if (uncategorizedVisits.length > 0) {
+        // All batches failed
+        await this._updateServerHealth(false);
+        await this._scheduleRetry();
+      }
+
+      // 5. Recalculate daily stats for dates that had changes
       if (totalProcessed > 0) {
         await this.recalculateDailyStats();
       }
 
-      // 5. Check if there are still visits needing classification
+      // 6. Check remaining and schedule follow-up if needed
       const remainingUncategorized = await this.collectUncategorizedVisits();
       if (remainingUncategorized.length > 0) {
-        console.log(`[CategoryScheduler] ${remainingUncategorized.length} visits still need classification (will be processed in next batch)`);
+        console.log(`[CategoryScheduler] ${remainingUncategorized.length} visits still need classification`);
+
+        // Schedule follow-up: quickly after recovery, or let backoff handle if all failed
+        if (hadAnySuccess && hadAnyFailure) {
+          // Partial success — some batches failed, retry sooner than 30min
+          await this._scheduleFollowUp(2);
+        } else if (hadAnySuccess && previousFailures > 0) {
+          // Server just recovered — process backlog promptly
+          await this._scheduleFollowUp(0.5);
+        }
       } else {
         console.log('[CategoryScheduler] All sessions categorized!');
       }
 
       console.log(`[CategoryScheduler] Total processed: ${totalProcessed} visits`);
 
-      // 5. Update last run time
+      // 7. Update last run time
       const settings = await dbManager.getSettings();
       settings.categoryScheduler.lastRun = Date.now();
       await dbManager.saveSettings(settings);
@@ -145,6 +345,13 @@ class CategoryScheduler {
 
     } catch (error) {
       console.error('[CategoryScheduler] Error in batch processing:', error);
+      // Schedule retry on unexpected errors too
+      try {
+        await this._updateServerHealth(false);
+        await this._scheduleRetry();
+      } catch (retryError) {
+        console.error('[CategoryScheduler] Failed to schedule retry:', retryError);
+      }
     } finally {
       this.isProcessing = false;
     }
@@ -152,9 +359,10 @@ class CategoryScheduler {
 
   /**
    * Collect uncategorized visits from recent sessions
+   * @param {Array<string>|null} filterDates - If provided, only collect visits from these dates (YYYY-MM-DD)
    * @returns {Promise<Array>} Array of visits needing classification
    */
-  async collectUncategorizedVisits() {
+  async collectUncategorizedVisits(filterDates = null) {
     const visits = [];
     const seenUrls = new Set();
 
@@ -171,6 +379,9 @@ class CategoryScheduler {
     // For regular: key = domain (one classification per domain, applied via cache)
 
     for (const session of sessions) {
+      // Filter by dates if specified
+      if (filterDates && !filterDates.includes(session.date)) continue;
+
       // Skip if already properly classified with subcategory
       const hasCategory = !needsClassification.includes(session.category);
       const hasSubcategory = session.subcategory && session.subcategory !== null;
@@ -225,7 +436,7 @@ class CategoryScheduler {
   /**
    * Send visits to server for classification
    * @param {Array} visits - Visits to classify
-   * @returns {Promise<Array>} Classification results
+   * @returns {Promise<Array|null>} Classification results or null on failure
    */
   async sendToServer(visits) {
     try {
@@ -424,9 +635,9 @@ class CategoryScheduler {
         session.subcategory = primarySubcategory;
         await dbManager.saveSession(session);
         updatedCount++;
-        console.log(`[CategoryScheduler] ✅ Updated session ${sessionId}: ${primaryCategory}:${primarySubcategory || 'general'}`);
+        console.log(`[CategoryScheduler] Updated session ${sessionId}: ${primaryCategory}:${primarySubcategory || 'general'}`);
       } else {
-        console.warn(`[CategoryScheduler] ⚠️ No primary category found for session ${sessionId}`);
+        console.warn(`[CategoryScheduler] No primary category found for session ${sessionId}`);
       }
     }
 
@@ -512,17 +723,26 @@ class CategoryScheduler {
   }
 
   /**
-   * Get scheduler status
+   * Get scheduler status (includes server health info)
    * @returns {Promise<Object>} Status object
    */
   async getStatus() {
     const settings = await dbManager.getSettings();
     const scheduler = settings.categoryScheduler || {};
+    const health = scheduler.serverHealth || {};
 
     return {
       offsetMinutes: scheduler.offsetMinutes || 0,
       lastRun: scheduler.lastRun || null,
-      isProcessing: this.isProcessing
+      isProcessing: this.isProcessing,
+      serverHealth: {
+        consecutiveFailures: health.consecutiveFailures || 0,
+        lastFailureTime: health.lastFailureTime || null,
+        lastSuccessTime: health.lastSuccessTime || null,
+        currentBackoffMs: health.currentBackoffMs || 0,
+        nextRetryTime: health.nextRetryTime || null,
+        isHealthy: (health.consecutiveFailures || 0) === 0
+      }
     };
   }
 
@@ -531,7 +751,124 @@ class CategoryScheduler {
    */
   async forceRun() {
     console.log('[CategoryScheduler] Force run requested');
+
+    if (this.isProcessing) {
+      console.log('[CategoryScheduler] Already processing, force run skipped');
+      return;
+    }
+
+    // Reset backoff state on manual trigger
+    await this._updateServerHealth(true);
+    await chrome.alarms.clear(this.retryAlarmName);
     await this.processBatch();
+  }
+
+  // ============================================
+  // Onboarding / Bulk Processing
+  // ============================================
+
+  /**
+   * Process recent sessions (today + yesterday) first, then continue remaining in background.
+   * Returns as soon as recent sessions are done so onboarding can redirect quickly.
+   * @param {Function} onProgress - ({processed, total, phase}) => void
+   * @returns {Promise<{recentDone: boolean, remainingCount: number}>}
+   */
+  async processRecentThenBackground(onProgress = null) {
+    console.log('[CategoryScheduler] Processing recent sessions first...');
+
+    // Build date string for today only (last 24h)
+    const today = new Date();
+    const formatDate = (d) => d.toISOString().split('T')[0];
+    const recentDates = [formatDate(today)];
+
+    // Phase 1: Collect and process recent visits only
+    const recentVisits = await this.collectUncategorizedVisits(recentDates);
+    const allVisits = await this.collectUncategorizedVisits();
+    const remainingCount = allVisits.length - recentVisits.length;
+
+    console.log(`[CategoryScheduler] Recent: ${recentVisits.length}, Remaining: ${remainingCount}`);
+
+    if (recentVisits.length > 0) {
+      if (onProgress) onProgress({ processed: 0, total: recentVisits.length, phase: 'recent' });
+      await this._processBatchList(recentVisits, onProgress, 'recent');
+      await this.recalculateDailyStats();
+    }
+
+    if (onProgress) onProgress({ processed: recentVisits.length, total: recentVisits.length, phase: 'recent_done' });
+
+    // Phase 2: Process remaining visits in background (non-blocking)
+    if (remainingCount > 0) {
+      console.log(`[CategoryScheduler] Starting background classification of ${remainingCount} remaining visits...`);
+      // Fire and forget — runs in service worker background
+      this._processRemainingInBackground(recentDates, onProgress);
+    }
+
+    return { recentDone: true, remainingCount };
+  }
+
+  /**
+   * Background processing of non-recent visits
+   * @private
+   */
+  async _processRemainingInBackground(excludeDates, onProgress) {
+    try {
+      // Re-collect — recent ones are now classified, so only older ones remain
+      const remainingVisits = await this.collectUncategorizedVisits();
+
+      if (remainingVisits.length === 0) {
+        console.log('[CategoryScheduler] No remaining visits to classify');
+        return;
+      }
+
+      console.log(`[CategoryScheduler] Background: ${remainingVisits.length} visits to classify`);
+
+      await this._processBatchList(remainingVisits, (progress) => {
+        if (onProgress) onProgress({ ...progress, phase: 'background' });
+      }, 'background');
+
+      await this.recalculateDailyStats();
+      console.log('[CategoryScheduler] Background classification complete');
+    } catch (error) {
+      console.error('[CategoryScheduler] Background classification error:', error);
+    }
+  }
+
+  /**
+   * Process a list of visits in batches (with per-batch retry)
+   * @private
+   */
+  async _processBatchList(visits, onProgress, phase) {
+    const BATCH_SIZE = 50;
+    let totalProcessed = 0;
+
+    for (let i = 0; i < visits.length; i += BATCH_SIZE) {
+      const batch = visits.slice(i, i + BATCH_SIZE);
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(visits.length / BATCH_SIZE);
+
+      console.log(`[CategoryScheduler] [${phase}] Batch ${batchNum}/${totalBatches} (${batch.length} visits)`);
+
+      let results = await this.sendToServer(batch);
+
+      // Immediate retry once on failure
+      if (!results) {
+        console.log(`[CategoryScheduler] [${phase}] Batch ${batchNum} failed, retrying in ${this.BATCH_RETRY_DELAY_MS}ms...`);
+        await new Promise(r => setTimeout(r, this.BATCH_RETRY_DELAY_MS));
+        results = await this.sendToServer(batch);
+      }
+
+      if (!results) {
+        console.error(`[CategoryScheduler] [${phase}] Batch ${batchNum} failed after retry, skipping`);
+        // Don't count as processed — visits remain uncategorized in DB
+        if (onProgress) onProgress({ processed: totalProcessed, total: visits.length, phase });
+        continue;
+      }
+
+      await this.applyResults(results, batch);
+      totalProcessed += batch.length;
+
+      if (onProgress) onProgress({ processed: totalProcessed, total: visits.length, phase });
+    }
   }
 
   /**
@@ -542,49 +879,76 @@ class CategoryScheduler {
   async processUntilComplete(onProgress = null) {
     console.log('[CategoryScheduler] Processing until all sessions are categorized...');
 
-    // Collect ALL visits needing classification upfront
-    const allVisits = await this.collectUncategorizedVisits();
+    const MAX_CYCLES = 3; // Maximum retry cycles for the entire process
 
-    if (allVisits.length === 0) {
-      console.log('[CategoryScheduler] All sessions already categorized!');
-      if (onProgress) onProgress({ processed: 0, total: 0 });
-      return;
-    }
+    for (let cycle = 0; cycle < MAX_CYCLES; cycle++) {
+      // Collect ALL visits needing classification
+      const allVisits = await this.collectUncategorizedVisits();
 
-    const totalVisits = allVisits.length;
-    let totalProcessed = 0;
-    const BATCH_SIZE = 50;
-
-    console.log(`[CategoryScheduler] Total visits to classify: ${totalVisits}`);
-    if (onProgress) onProgress({ processed: 0, total: totalVisits });
-
-    // Process in batches
-    for (let i = 0; i < allVisits.length; i += BATCH_SIZE) {
-      const batch = allVisits.slice(i, i + BATCH_SIZE);
-      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(allVisits.length / BATCH_SIZE);
-
-      console.log(`[CategoryScheduler] Batch ${batchNum}/${totalBatches} (${batch.length} visits)`);
-
-      const results = await this.sendToServer(batch);
-
-      if (!results) {
-        console.error(`[CategoryScheduler] Batch ${batchNum} failed, skipping`);
-        totalProcessed += batch.length;
-        if (onProgress) onProgress({ processed: totalProcessed, total: totalVisits });
-        continue;
+      if (allVisits.length === 0) {
+        console.log('[CategoryScheduler] All sessions already categorized!');
+        if (onProgress) onProgress({ processed: 0, total: 0 });
+        break;
       }
 
-      await this.applyResults(results, batch);
-      totalProcessed += batch.length;
+      if (cycle > 0) {
+        console.log(`[CategoryScheduler] Retry cycle ${cycle + 1}/${MAX_CYCLES}: ${allVisits.length} visits remaining`);
+      }
 
-      if (onProgress) onProgress({ processed: totalProcessed, total: totalVisits });
+      const totalVisits = allVisits.length;
+      let totalProcessed = 0;
+      const BATCH_SIZE = 50;
+
+      console.log(`[CategoryScheduler] Total visits to classify: ${totalVisits}`);
+      if (onProgress) onProgress({ processed: 0, total: totalVisits });
+
+      // Process in batches
+      for (let i = 0; i < allVisits.length; i += BATCH_SIZE) {
+        const batch = allVisits.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(allVisits.length / BATCH_SIZE);
+
+        console.log(`[CategoryScheduler] Batch ${batchNum}/${totalBatches} (${batch.length} visits)`);
+
+        let results = await this.sendToServer(batch);
+
+        // Immediate retry once on failure
+        if (!results) {
+          console.log(`[CategoryScheduler] Batch ${batchNum} failed, retrying in ${this.BATCH_RETRY_DELAY_MS}ms...`);
+          await new Promise(r => setTimeout(r, this.BATCH_RETRY_DELAY_MS));
+          results = await this.sendToServer(batch);
+        }
+
+        if (!results) {
+          console.error(`[CategoryScheduler] Batch ${batchNum} failed after retry, skipping`);
+          if (onProgress) onProgress({ processed: totalProcessed, total: totalVisits });
+          continue;
+        }
+
+        await this.applyResults(results, batch);
+        totalProcessed += batch.length;
+
+        if (onProgress) onProgress({ processed: totalProcessed, total: totalVisits });
+      }
+
+      // Recalculate stats once at the end of each cycle
+      await this.recalculateDailyStats();
+
+      console.log(`[CategoryScheduler] Cycle ${cycle + 1} complete: ${totalProcessed}/${totalVisits} visits processed`);
+
+      // Check if all done
+      const remaining = await this.collectUncategorizedVisits();
+      if (remaining.length === 0) {
+        console.log('[CategoryScheduler] All sessions categorized!');
+        break;
+      }
+
+      // Wait before retry cycle
+      if (cycle < MAX_CYCLES - 1) {
+        console.log(`[CategoryScheduler] ${remaining.length} visits still uncategorized, retrying in 5s...`);
+        await new Promise(r => setTimeout(r, 5000));
+      }
     }
-
-    // Recalculate stats once at the end
-    await this.recalculateDailyStats();
-
-    console.log(`[CategoryScheduler] Complete: ${totalProcessed}/${totalVisits} visits processed`);
   }
 }
 

@@ -264,10 +264,22 @@ class HistoryAnalyzer {
           duration = CONFIG.AVG_PAGE_VIEW;
         }
 
-        // Mark as uncategorized - will be classified by server during onboarding
-        // This ensures all classification follows the same unified server process
+        // Local classification (domain + path rules)
+        // TODO: 테스트 후 활성화
+        let category = 'uncategorized';
+        let confidence = 0;
+        // try {
+        //   const result = await categoryDetector.detectCategory(visit.url, visit.title || '');
+        //   if (result.category && result.category !== 'needs_server_classification') {
+        //     category = result.category;
+        //     confidence = result.confidence;
+        //   }
+        // } catch (e) {
+        //   // Ignore detection errors
+        // }
+
         if (categorizedCount < 5) {
-          console.log(`[HistoryAnalyzer] ${visit.domain} → uncategorized (will be classified by server)`);
+          console.log(`[HistoryAnalyzer] ${visit.domain} → ${category} (confidence: ${confidence})`);
           categorizedCount++;
         }
 
@@ -279,8 +291,8 @@ class HistoryAnalyzer {
           endTime: visit.time + duration,
           duration: duration,
           durationMinutes: Math.round(duration / 60000),
-          category: 'uncategorized',  // Let server classify during onboarding
-          confidence: 0,
+          category: category,
+          confidence: confidence,
           deviceSource: visit.isLocal ? 'local' : 'Other Devices'
         });
       }
@@ -577,22 +589,22 @@ class HistoryAnalyzer {
       await dbManager.saveSettings({ ...settings, anonymousId });
     }
 
-    // Convert sessions to history reports
+    // Only send uncategorized sessions to server (locally classified ones don't need server help)
+    const unclassified = sessions.filter(s =>
+      !s.category || s.category === 'uncategorized' || s.category === 'needs_server_classification'
+    );
+
+    console.log(`[HistoryAnalyzer] ${sessions.length} total sessions, ${sessions.length - unclassified.length} classified locally, ${unclassified.length} need server classification`);
+
     const reports = [];
 
-    for (const session of sessions) {
+    for (const session of unclassified) {
       const visit = session.visits[0];
       if (!visit) continue;
 
       try {
         const url = new URL(visit.url);
         const domain = normalizeDomain(url.hostname);
-
-        // Detect category with full result (IMPORTANT: await!)
-        const classResult = await categoryDetector.detectCategory(visit.url, visit.title);
-        const category = classResult.category || 'other';
-        const confidence = classResult.confidence || 0.5;
-        const method = classResult.method || 'unknown';
 
         // Extract platform info from URL
         const platformInfo = this.extractPlatformInfo(url, visit.title);
@@ -601,9 +613,9 @@ class HistoryAnalyzer {
           domain: domain,
           title: this.anonymizeTitle(visit.title),
           urlPath: this.generalizeUrlPath(url.pathname),
-          detectedCategory: category,
-          confidence: confidence,
-          method: method,
+          detectedCategory: 'uncategorized',
+          confidence: 0,
+          method: 'needs_server',
           platform: platformInfo.platform,
           platformId: platformInfo.platformId,
           ogType: null,  // Not available from history

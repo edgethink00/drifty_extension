@@ -106,13 +106,22 @@ class CategoryDetector {
           };
         }
 
-        // 2.2. Multipurpose domain → 서버 분류 필요
+        // 2.2. Multipurpose domain → 메타데이터로 로컬 분류 시도, 안되면 서버
         if (domainInfo.type === 'multipurpose') {
           // Path rule 확인 (간단한 경우)
           const pathResult = checkPathRules(domainInfo.domain, pathname);
           if (pathResult) {
             return pathResult;
           }
+
+          // YouTube: 메타데이터 또는 URL 기반 로컬 분류
+          // TODO: 테스트 후 활성화
+          // if (domainInfo.domain === 'youtube.com' || domainInfo.domain === 'youtu.be') {
+          //   const ytResult = this.classifyYouTubeByMetadata(metadata?.youtube || {}, urlObj);
+          //   if (ytResult) {
+          //     return ytResult;
+          //   }
+          // }
 
           // 서버 분류 필요 (메타데이터 포함)
           return {
@@ -177,6 +186,62 @@ class CategoryDetector {
   isMultipurposeDomain(domain) {
     const info = getWellKnownDomain(domain);
     return info?.type === 'multipurpose';
+  }
+
+  /**
+   * Classify YouTube content locally using page metadata
+   * @returns {Object|null} Classification result, or null if can't determine
+   */
+  classifyYouTubeByMetadata(ytData, urlObj) {
+    // YouTube Music domain → always music
+    if (ytData.isMusic) {
+      return { category: 'music', confidence: 1.0, method: 'youtube_music_domain' };
+    }
+
+    // Music playlist prefixes (RDMM, RDAMVM, RDCLAK, RDAMPL, OLAK)
+    if (ytData.isMusicPlaylist) {
+      return { category: 'music', confidence: 0.95, method: 'youtube_music_playlist' };
+    }
+
+    // Shorts → entertainment
+    if (ytData.isShorts) {
+      return { category: 'entertainment', confidence: 0.95, method: 'youtube_shorts' };
+    }
+
+    // Genre meta tag (uploader-set category)
+    if (ytData.genre) {
+      const genreMap = {
+        'Music':                'music',
+        'Gaming':               'games',
+        'Education':            'learning',
+        'Science & Technology':  'learning',
+        'Howto & Style':        'learning',
+        'News & Politics':      'news',
+        'Entertainment':        'entertainment',
+        'Comedy':               'entertainment',
+        'Film & Animation':     'entertainment',
+        'Sports':               'entertainment',
+        'Autos & Vehicles':     'entertainment',
+        'Pets & Animals':       'entertainment',
+        'Travel & Events':      'entertainment',
+        'People & Blogs':       'social',
+        'Nonprofits & Activism': 'news'
+      };
+
+      const mapped = genreMap[ytData.genre];
+      if (mapped) {
+        return { category: mapped, confidence: 0.9, method: 'youtube_genre' };
+      }
+    }
+
+    // URL parameter check for music playlists (fallback if metadata not yet loaded)
+    const listParam = urlObj?.searchParams?.get('list') || '';
+    const musicPrefixes = ['RDMM', 'RDAMVM', 'RDCLAK', 'RDAMPL', 'OLAK'];
+    if (musicPrefixes.some(prefix => listParam.startsWith(prefix))) {
+      return { category: 'music', confidence: 0.95, method: 'youtube_music_playlist_url' };
+    }
+
+    return null;
   }
 
   /**

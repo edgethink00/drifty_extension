@@ -1,253 +1,360 @@
-// Onboarding flow state
-let currentStep = 'welcome';
-let userChoices = {
-  agreeToDataCollection: false,
+// ===== State =====
+const userConfig = {
+  displayName: '',
+  weekStartDay: 1,
+  notificationsEnabled: true,
+  privacyModeEnabled: false,
+  analyzeHistory: true,
   shareAnonymousData: false,
-  excludedDomains: [],
-  analyzeHistory: true
 };
 
-// DOM elements
-const welcomeScreen = document.getElementById('welcomeScreen');
-const privacyScreen = document.getElementById('privacyScreen');
-const statsScreen = document.getElementById('statsScreen');
-const setupScreen = document.getElementById('setupScreen');
-const completeScreen = document.getElementById('completeScreen');
+const backgroundTasks = {
+  domainCache:     { promise: null, status: 'pending' },
+  historyAnalysis: { promise: null, status: 'pending' },
+  classification:  { promise: null, status: 'pending' },
+};
 
-const getStartedBtn = document.getElementById('getStartedBtn');
-const agreeBtn = document.getElementById('agreeBtn');
-const declineBtn = document.getElementById('declineBtn');
-const skipStatsBtn = document.getElementById('skipStatsBtn');
-const continueStatsBtn = document.getElementById('continueStatsBtn');
-const skipBtn = document.getElementById('skipBtn');
-const finishBtn = document.getElementById('finishBtn');
+// ===== Screen Navigation =====
+const screenIds = ['welcomeScreen', 'nameScreen', 'progressScreen'];
+let currentScreenIndex = 0;
 
-const excludedDomainsTextarea = document.getElementById('excludedDomains');
-const analyzeHistoryCheckbox = document.getElementById('analyzeHistory');
+function goToStep(index) {
+  const currentScreen = document.getElementById(screenIds[currentScreenIndex]);
+  const nextScreen = document.getElementById(screenIds[index]);
+  if (!currentScreen || !nextScreen) return;
 
-// Event Listeners
-getStartedBtn.addEventListener('click', () => {
-  showScreen('privacy');
-});
+  currentScreen.style.animation = 'screenOut 0.3s ease forwards';
+  setTimeout(() => {
+    currentScreen.classList.add('hidden');
+    currentScreen.style.animation = '';
 
-agreeBtn.addEventListener('click', () => {
-  userChoices.agreeToDataCollection = true;
-  showScreen('stats');
-});
+    nextScreen.classList.remove('hidden');
+    nextScreen.style.animation = 'screenIn 0.5s cubic-bezier(0.16, 1, 0.3, 1)';
 
-declineBtn.addEventListener('click', () => {
-  userChoices.agreeToDataCollection = false;
-  alert('deTime requires data collection to function. The extension will be disabled.');
-  window.close();
-});
+    currentScreenIndex = index;
 
-skipStatsBtn.addEventListener('click', async () => {
-  userChoices.shareAnonymousData = false;
-  await savePrivacySettings();
-  showScreen('setup');
-});
-
-continueStatsBtn.addEventListener('click', async () => {
-  userChoices.shareAnonymousData = true;
-  await savePrivacySettings();
-  showScreen('setup');
-});
-
-skipBtn.addEventListener('click', async () => {
-  await completeSetup();
-});
-
-finishBtn.addEventListener('click', async () => {
-  const domainsText = excludedDomainsTextarea.value.trim();
-  if (domainsText) {
-    userChoices.excludedDomains = domainsText
-      .split('\n')
-      .map(d => d.trim())
-      .filter(d => d.length > 0);
-  }
-
-  userChoices.analyzeHistory = analyzeHistoryCheckbox.checked;
-  await completeSetup();
-});
-
-// Functions
-function showScreen(screen) {
-  welcomeScreen.classList.add('hidden');
-  privacyScreen.classList.add('hidden');
-  statsScreen.classList.add('hidden');
-  setupScreen.classList.add('hidden');
-  completeScreen.classList.add('hidden');
-
-  switch(screen) {
-    case 'welcome':
-      welcomeScreen.classList.remove('hidden');
-      break;
-    case 'privacy':
-      privacyScreen.classList.remove('hidden');
-      break;
-    case 'stats':
-      statsScreen.classList.remove('hidden');
-      break;
-    case 'setup':
-      setupScreen.classList.remove('hidden');
-      break;
-    case 'complete':
-      completeScreen.classList.remove('hidden');
-      break;
-  }
-
-  currentStep = screen;
+    // Init progress screen
+    if (index === 2) {
+      onProgressScreen();
+    }
+  }, 250);
 }
 
-async function savePrivacySettings() {
+// ===== Background Tasks =====
+function startBackgroundTasks() {
+  // 1. Domain cache
+  backgroundTasks.domainCache.status = 'running';
+  backgroundTasks.domainCache.promise = sendMessageAsync({ type: 'DOWNLOAD_DOMAIN_CACHE' })
+    .then(r => {
+      backgroundTasks.domainCache.status = r.success ? 'done' : 'error';
+      console.log('[Onboarding] Domain cache:', backgroundTasks.domainCache.status);
+    })
+    .catch(e => {
+      backgroundTasks.domainCache.status = 'error';
+      console.error('[Onboarding] Domain cache error:', e);
+    });
+
+  // 2. History analysis (conditional)
+  if (userConfig.analyzeHistory) {
+    backgroundTasks.historyAnalysis.status = 'running';
+    backgroundTasks.historyAnalysis.promise = sendMessageAsync({ type: 'ANALYZE_HISTORY', days: 14 })
+      .then(r => {
+        backgroundTasks.historyAnalysis.status = 'done';
+        console.log('[Onboarding] History done:', r.data?.sessionsCreated, 'sessions');
+        startClassification();
+      })
+      .catch(e => {
+        backgroundTasks.historyAnalysis.status = 'error';
+        console.error('[Onboarding] History error:', e);
+        startClassification();
+      });
+  } else {
+    backgroundTasks.historyAnalysis.status = 'skipped';
+    startClassification();
+  }
+}
+
+function startClassification() {
+  backgroundTasks.classification.status = 'running';
+  backgroundTasks.classification.promise = sendMessageAsync({ type: 'PROCESS_RECENT_THEN_BACKGROUND' })
+    .then(r => {
+      backgroundTasks.classification.status = 'done';
+      console.log('[Onboarding] Classification done:', r.data);
+    })
+    .catch(e => {
+      backgroundTasks.classification.status = 'error';
+      console.error('[Onboarding] Classification error:', e);
+    });
+}
+
+// ===== Settings =====
+async function saveMinimalSettings() {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    const response = await sendMessageAsync({ type: 'GET_SETTINGS' });
     const settings = response.success ? response.data : {};
 
     settings.privacy = {
-      dataCollectionConsent: userChoices.agreeToDataCollection,
-      collectFullData: userChoices.agreeToDataCollection,
-      excludedDomains: userChoices.excludedDomains
+      dataCollectionConsent: true,
+      collectFullData: true,
+      excludedDomains: settings.privacy?.excludedDomains || []
     };
 
-    if (!settings.serverSync) {
-      settings.serverSync = {};
-    }
+    if (!settings.serverSync) settings.serverSync = {};
     settings.serverSync.enabled = true;
-    settings.serverSync.shareUsageData = userChoices.shareAnonymousData;
+    settings.serverSync.shareUsageData = userConfig.shareAnonymousData;
+
+    if (!settings.historyAnalysis) settings.historyAnalysis = {};
+    settings.historyAnalysis.showApproximatedData = userConfig.analyzeHistory;
+
+    await sendMessageAsync({ type: 'SAVE_SETTINGS', settings });
+    console.log('[Onboarding] Minimal settings saved');
+  } catch (error) {
+    console.error('[Onboarding] Error saving minimal settings:', error);
+  }
+}
+
+async function saveFinalSettings() {
+  try {
+    const response = await sendMessageAsync({ type: 'GET_SETTINGS' });
+    const settings = response.success ? response.data : {};
+
+    settings.displayName = userConfig.displayName;
+    settings.weekStartDay = userConfig.weekStartDay;
+
+    if (!settings.notifications) settings.notifications = {};
+    settings.notifications.enabled = userConfig.notificationsEnabled;
+
+    if (!settings.privacyMode) settings.privacyMode = {};
+    settings.privacyMode.enabled = userConfig.privacyModeEnabled;
+
+    settings.privacy = {
+      dataCollectionConsent: true,
+      collectFullData: true,
+      excludedDomains: settings.privacy?.excludedDomains || []
+    };
+
+    if (!settings.serverSync) settings.serverSync = {};
+    settings.serverSync.enabled = true;
+    settings.serverSync.shareUsageData = userConfig.shareAnonymousData;
+
+    if (!settings.historyAnalysis) settings.historyAnalysis = {};
+    settings.historyAnalysis.showApproximatedData = userConfig.analyzeHistory;
 
     settings.onboardingComplete = true;
 
-    await chrome.runtime.sendMessage({
-      type: 'SAVE_SETTINGS',
-      settings: settings
-    });
-
-    console.log('Privacy settings saved:', settings.privacy);
+    await sendMessageAsync({ type: 'SAVE_SETTINGS', settings });
+    console.log('[Onboarding] Final settings saved');
   } catch (error) {
-    console.error('Error saving privacy settings:', error);
+    console.error('[Onboarding] Error saving final settings:', error);
   }
 }
 
-async function completeSetup() {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
-    const settings = response.success ? response.data : {};
+// ===== Progress + Tips Screen =====
+let tipIndex = 0;
+let tipInterval = null;
 
-    if (userChoices.excludedDomains.length > 0) {
-      if (!settings.privacy) {
-        settings.privacy = {};
-      }
-      settings.privacy.excludedDomains = userChoices.excludedDomains;
+function startTipsSlideshow() {
+  const tips = document.querySelectorAll('.tip-card');
+  const dots = document.querySelectorAll('.tip-dot');
+  if (tips.length === 0) return;
+
+  tipInterval = setInterval(() => {
+    tips[tipIndex].classList.remove('active');
+    dots[tipIndex].classList.remove('active');
+
+    tipIndex = (tipIndex + 1) % tips.length;
+
+    tips[tipIndex].classList.add('active');
+    tips[tipIndex].style.animation = 'none';
+    // Force reflow to restart animation
+    tips[tipIndex].offsetHeight;
+    tips[tipIndex].style.animation = '';
+
+    dots[tipIndex].classList.add('active');
+  }, 4000);
+}
+
+function updateCompactProgress() {
+  const map = {
+    cpCache: backgroundTasks.domainCache,
+    cpHistory: backgroundTasks.historyAnalysis,
+    cpClassify: backgroundTasks.classification,
+  };
+
+  for (const [id, task] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.className = 'compact-progress-item';
+    if (task.status === 'running') el.classList.add('running');
+    else if (task.status === 'done') el.classList.add('done');
+    else if (task.status === 'error') el.classList.add('error');
+    else if (task.status === 'skipped') el.classList.add('skipped');
+  }
+
+  // Check if all done
+  const allDone = Object.values(backgroundTasks).every(
+    t => t.status === 'done' || t.status === 'skipped' || t.status === 'error'
+  );
+
+  if (allDone) {
+    const btn = document.getElementById('openDashboardBtn');
+    if (btn && btn.disabled) {
+      btn.disabled = false;
+      btn.textContent = 'Open Dashboard';
     }
-
-    if (!settings.historyAnalysis) {
-      settings.historyAnalysis = {};
-    }
-    settings.historyAnalysis.showApproximatedData = userChoices.analyzeHistory;
-
-    await chrome.runtime.sendMessage({
-      type: 'SAVE_SETTINGS',
-      settings: settings
-    });
-
-    console.log('Setup complete. Final settings:', settings);
-
-    showScreen('complete');
-    await runSetupTasks();
-
-    window.location.href = chrome.runtime.getURL('dashboard/dashboard.html');
-  } catch (error) {
-    console.error('Error completing setup:', error);
-    window.location.href = chrome.runtime.getURL('dashboard/dashboard.html');
   }
 }
 
-async function runSetupTasks() {
-  const stepCache = document.getElementById('stepCache');
-  const stepHistory = document.getElementById('stepHistory');
-  const stepClassify = document.getElementById('stepClassify');
+async function onProgressScreen() {
+  // Start tips slideshow
+  startTipsSlideshow();
 
-  try {
-    // Step 1: Download domain cache
-    updateStepStatus(stepCache, 'running', 'Downloading category database...');
-    const cacheResult = await sendMessageAsync({ type: 'DOWNLOAD_DOMAIN_CACHE' });
-    console.log('[Onboarding] Domain cache download result:', cacheResult);
-    if (cacheResult.success) {
-      updateStepStatus(stepCache, 'completed', 'Category database downloaded');
+  // Update progress UI periodically
+  updateCompactProgress();
+  const progressInterval = setInterval(updateCompactProgress, 500);
+
+  // Save final settings
+  await saveFinalSettings();
+
+  // Wait for all background tasks
+  const allPromises = Object.values(backgroundTasks)
+    .map(t => t.promise)
+    .filter(Boolean);
+
+  await Promise.allSettled(allPromises);
+  clearInterval(progressInterval);
+  updateCompactProgress();
+
+  // Success state
+  if (tipInterval) clearInterval(tipInterval);
+
+  const icon = document.getElementById('completeIcon');
+  icon.textContent = '✅';
+  icon.classList.add('success');
+  document.getElementById('completeTitle').textContent = "You're All Set!";
+  document.getElementById('completeSubtitle').textContent = 'Redirecting to dashboard...';
+
+  const btn = document.getElementById('openDashboardBtn');
+  btn.disabled = false;
+  btn.textContent = 'Open Dashboard';
+
+  await sleep(1500);
+  window.location.href = chrome.runtime.getURL('dashboard/dashboard.html');
+}
+
+// ===== DOM Setup =====
+document.addEventListener('DOMContentLoaded', () => {
+  // --- Welcome Screen ---
+  document.getElementById('startBtn').addEventListener('click', () => {
+    // Read all welcome screen options
+    userConfig.analyzeHistory = document.getElementById('analyzeHistory').checked;
+    userConfig.shareAnonymousData = document.getElementById('shareStats').checked;
+
+    // Read advanced settings if opened
+    const notifToggle = document.getElementById('notificationsToggle');
+    const privacyToggle = document.getElementById('privacyModeToggle');
+    if (notifToggle) userConfig.notificationsEnabled = notifToggle.checked;
+    if (privacyToggle) userConfig.privacyModeEnabled = privacyToggle.checked;
+
+    // Save minimal settings for background tasks
+    saveMinimalSettings();
+
+    // Fire background tasks immediately
+    startBackgroundTasks();
+
+    // Go to name screen
+    goToStep(1);
+  });
+
+  // --- Advanced Settings Toggle ---
+  document.getElementById('advancedToggle').addEventListener('click', () => {
+    const panel = document.getElementById('advancedPanel');
+    const arrow = document.getElementById('advancedArrow');
+    if (panel.classList.contains('hidden')) {
+      panel.classList.remove('hidden');
+      arrow.classList.add('open');
     } else {
-      updateStepStatus(stepCache, 'error', 'Failed to download database');
+      panel.classList.add('hidden');
+      arrow.classList.remove('open');
     }
-    await sleep(500);
+  });
 
-    // Step 2: Analyze history if enabled
-    if (userChoices.analyzeHistory) {
-      updateStepStatus(stepHistory, 'running', 'Analyzing browsing history...');
-      const result = await sendMessageAsync({ type: 'ANALYZE_HISTORY', days: 14 });
-      console.log('[Onboarding] History analysis result:', result);
-      updateStepStatus(stepHistory, 'completed', `Analyzed ${result.data?.sessionsCreated || 0} sessions`);
-      await sleep(500);
-    } else {
-      updateStepStatus(stepHistory, 'completed', 'History analysis skipped');
-      await sleep(500);
+  // Segment control (week start day)
+  const segmentBtns = document.querySelectorAll('#weekStartControl .segment-btn');
+  segmentBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      segmentBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      userConfig.weekStartDay = parseInt(btn.dataset.value);
+    });
+  });
+
+  // --- Name Screen ---
+  const nameInput = document.getElementById('nameInput');
+  const greetingText = document.getElementById('greetingPreview').querySelector('.greeting-preview-text');
+
+  function getGreetingText() {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  greetingText.textContent = getGreetingText();
+
+  nameInput.addEventListener('input', () => {
+    const name = nameInput.value.trim();
+    greetingText.textContent = name
+      ? `${getGreetingText()}, ${name}`
+      : getGreetingText();
+  });
+
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      userConfig.displayName = nameInput.value.trim();
+      goToStep(2);
     }
+  });
 
-    // Step 3: Classify activities with live progress
-    updateStepStatus(stepClassify, 'running', 'Classifying activities... (0/0)');
+  document.getElementById('nameNextBtn').addEventListener('click', () => {
+    userConfig.displayName = nameInput.value.trim();
+    goToStep(2);
+  });
 
-    // Listen for progress updates from background
-    const progressListener = (message) => {
-      if (message.type === 'CLASSIFY_PROGRESS' && message.progress) {
-        const { processed, total } = message.progress;
-        updateStepStatus(stepClassify, 'running', `Classifying activities... (${processed}/${total})`);
-      }
-    };
-    chrome.runtime.onMessage.addListener(progressListener);
+  document.getElementById('nameSkipBtn').addEventListener('click', () => {
+    userConfig.displayName = '';
+    goToStep(2);
+  });
 
-    const classifyResult = await sendMessageAsync({ type: 'PROCESS_ALL_BATCHES' });
-    chrome.runtime.onMessage.removeListener(progressListener);
-    console.log('[Onboarding] All batches classification result:', classifyResult);
-    updateStepStatus(stepClassify, 'completed', 'All activities classified');
-    await sleep(500);
+  // --- Progress Screen ---
+  document.getElementById('openDashboardBtn').addEventListener('click', () => {
+    window.location.href = chrome.runtime.getURL('dashboard/dashboard.html');
+  });
+});
 
-    // Success state
-    const icon = document.getElementById('completeIcon');
-    icon.textContent = '✅';
-    icon.classList.add('success');
-    document.getElementById('completeTitle').textContent = "You're All Set!";
-    document.getElementById('completeSubtitle').textContent = 'Redirecting to dashboard...';
-    await sleep(1000);
-
-  } catch (error) {
-    console.error('Error in setup tasks:', error);
-  }
-}
-
-function updateStepStatus(element, status, text) {
-  const icon = element.querySelector('.p-icon');
-  const textEl = element.querySelector('.p-text');
-
-  textEl.textContent = text;
-  element.className = `progress-item ${status}`;
-
-  if (status === 'running') {
-    icon.textContent = '⏳';
-  } else if (status === 'completed') {
-    icon.textContent = '✅';
-  } else if (status === 'error') {
-    icon.textContent = '❌';
-  }
-}
-
+// ===== Utilities =====
 function sendMessageAsync(message) {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
-      } else {
-        resolve(response);
-      }
-    });
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(response);
+        }
+      });
+    } catch (e) {
+      // Service worker not ready, retry once
+      setTimeout(() => {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve(response);
+          }
+        });
+      }, 500);
+    }
   });
 }
 
@@ -255,5 +362,4 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Initialize
-console.log('Onboarding page loaded');
+console.log('[Onboarding] Page loaded');

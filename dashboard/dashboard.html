@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>deTime - Dashboard</title>
   <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="mockup.css"> <!-- [MOCKUP] delete this line to remove mockup -->
 </head>
 <body>
   <div class="app-layout">
@@ -19,6 +20,10 @@
           <span class="nav-icon">📈</span>
           <span class="nav-label">Dashboard</span>
         </a>
+        <a href="#" class="nav-item" data-page="reports">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Reports</span>
+        </a>
         <a href="#" class="nav-item" data-page="flowchart">
           <span class="nav-icon">🗓️</span>
           <span class="nav-label">Flow Chart</span>
@@ -27,27 +32,30 @@
           <span class="nav-icon">⏱️</span>
           <span class="nav-label">Usage Limits</span>
         </a>
-        <a href="#" class="nav-item" data-page="goals">
-          <span class="nav-icon">🎯</span>
-          <span class="nav-label">Goals</span>
-        </a>
-        <a href="#" class="nav-item" data-page="reports">
-          <span class="nav-icon">📊</span>
-          <span class="nav-label">Reports</span>
-        </a>
-        <a href="#" class="nav-item" data-page="focus">
-          <span class="nav-icon">🍅</span>
-          <span class="nav-label">Focus Mode</span>
-        </a>
-        <a href="#" class="nav-item" data-page="downtime">
-          <span class="nav-icon">🌙</span>
-          <span class="nav-label">Downtime</span>
-        </a>
         <a href="#" class="nav-item" data-page="settings">
           <span class="nav-icon">⚙️</span>
           <span class="nav-label">Settings</span>
         </a>
       </nav>
+      <!-- [MOCKUP] Controls — delete this block to remove mockup -->
+      <div class="mockup-controls">
+        <div class="mockup-controls-title">Mockup Mode</div>
+        <div class="mockup-toggle-row">
+          <span class="mockup-toggle-label">Mock Data</span>
+          <label class="mockup-switch">
+            <input type="checkbox" id="mockDataToggle">
+            <span class="mockup-slider"></span>
+          </label>
+        </div>
+        <div class="mockup-toggle-row">
+          <span class="mockup-toggle-label">Mobile View</span>
+          <label class="mockup-switch">
+            <input type="checkbox" id="mobileViewToggle">
+            <span class="mockup-slider"></span>
+          </label>
+        </div>
+      </div>
+      <!-- [MOCKUP] END -->
       <div class="sidebar-footer">
         <button id="themeToggleBtn" class="btn-theme-toggle" title="Toggle theme">🌙</button>
       </div>
@@ -58,6 +66,10 @@
       <div class="main-content-inner">
       <!-- Dashboard Page -->
       <div id="dashboardPage" class="page active">
+        <!-- Greeting -->
+        <div class="dashboard-greeting" id="dashboardGreeting">
+          <span id="greetingText"></span>
+        </div>
         <!-- Header with Date Navigation -->
         <header class="content-header">
           <div class="date-navigator">
@@ -75,12 +87,14 @@
                 Last update: Never
               </div>
             </div>
-            <div class="header-tabs">
-              <button class="tab-btn active" data-tab="today">Today</button>
-              <button class="tab-btn" data-tab="week">Week</button>
-            </div>
           </div>
         </header>
+
+        <!-- Period Toggle (above chart) -->
+        <div class="chart-period-toggle">
+          <button class="tab-btn active" data-tab="today">Today</button>
+          <button class="tab-btn" data-tab="week">Week</button>
+        </div>
 
         <!-- Today Tab Content -->
         <div id="today" class="tab-content active">
@@ -152,46 +166,93 @@
 
           <!-- Bottom Cards -->
           <div class="bottom-cards">
-            <section class="card card-small">
-              <h3>Usage Stats</h3>
-              <div class="usage-stats-grid">
-                <div class="stat-box">
-                  <span class="stat-box-value" id="todayTotalTime">0h 0m</span>
-                  <span class="stat-box-label">Total Time</span>
+            <section class="card card-small card-summary">
+              <div class="summary-stats-row">
+                <div class="stat-inline">
+                  <span class="stat-inline-value" id="todayTotalTime">0h 0m</span>
+                  <span class="stat-inline-label">Total Time</span>
                   <span class="stat-box-compare" id="todayTotalCompare"></span>
                 </div>
-                <div class="stat-box" id="todaySameTimeContainer">
-                  <span class="stat-box-value" id="todaySameTimeValue">—</span>
-                  <span class="stat-box-label" id="todaySameTimeLabel">vs Yesterday</span>
+                <div class="stat-inline" id="todaySameTimeContainer">
+                  <span class="stat-inline-value" id="todaySameTimeValue">—</span>
+                  <span class="stat-inline-label" id="todaySameTimeLabel">vs Yesterday</span>
                   <span class="stat-box-compare" id="todaySameTimeCompare"></span>
                 </div>
-                <div class="stat-box">
-                  <span class="stat-box-value" id="todaySessions">0</span>
-                  <span class="stat-box-label">Sessions</span>
+                <div class="stat-inline">
+                  <span class="stat-inline-value" id="todaySessions">0</span>
+                  <span class="stat-inline-label">Sessions</span>
                   <span class="stat-box-compare" id="todaySessionsCompare"></span>
                 </div>
-                <div class="stat-box">
-                  <span class="stat-box-value" id="todayProductivityStat">0%</span>
-                  <span class="stat-box-label">Productivity</span>
+                <div class="stat-inline">
+                  <span class="stat-inline-value" id="todayProductivityStat">0%</span>
+                  <span class="stat-inline-label">Productivity</span>
                   <span class="stat-box-compare" id="todayProductivityCompare"></span>
                 </div>
               </div>
-            </section>
-
-            <section class="card card-small card-goals">
-              <h3>Today's Goals</h3>
-              <div id="todayGoalsDisplay" class="goals-display">
-                <div class="goals-empty">No goals set. <a href="#" class="goals-add-link" data-page="goals">Add a goal</a></div>
+              <!-- [MOCKUP] Goals section - only visible in mockup mode -->
+              <div class="summary-divider mockup-only hidden"></div>
+              <div class="summary-goals-section mockup-only hidden">
+                <h3>Goals</h3>
+                <div id="todayGoalsDisplay" class="goals-display">
+                </div>
               </div>
             </section>
 
-            <section class="card card-small">
+            <section class="card card-small card-full-col">
               <h3>Most Used Sites</h3>
               <div id="todayMostUsed" class="most-used-list">
               </div>
             </section>
           </div>
         </div>
+
+        <!-- AI Insights (Mockup Only) -->
+          <!-- [MOCKUP] AI Insights — delete this section to remove mockup -->
+          <section class="ai-insights-section" id="aiInsightsSection">
+            <div class="ai-insights-header">
+              <div class="ai-insights-title">
+                <span class="ai-icon">✨</span>
+                <h2>AI Insights</h2>
+              </div>
+            </div>
+
+            <!-- Chart 1: 시간대별 집중력 -->
+            <div class="ai-chart-card">
+              <div class="ai-chart-title">시간대별 집중력 패턴</div>
+              <p class="ai-comment" id="aiFocusComment"></p>
+              <div class="ai-chart-container">
+                <canvas id="aiFocusChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 2: 사용 전후 비교 -->
+            <div class="ai-chart-card">
+              <div class="ai-chart-title">deTime 사용 전후 변화</div>
+              <p class="ai-comment" id="aiHourlyComment"></p>
+              <div class="ai-chart-container">
+                <canvas id="aiHourlyChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 3: 이탈 경로 -->
+            <div class="ai-chart-card">
+              <div class="ai-chart-title">이탈 경로 분석</div>
+              <p class="ai-comment" id="aiWeeklyComment"></p>
+              <div class="ai-chart-container">
+                <canvas id="aiWeeklyChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Key Metrics (2x2) -->
+            <div class="ai-metrics-grid" id="aiMetricsGrid"></div>
+
+            <!-- Category Breakdown -->
+            <div class="ai-chart-card cb-card">
+              <div class="ai-chart-title">카테고리별 사용 시간</div>
+              <div id="categoryBreakdownContent" class="cb-content"></div>
+            </div>
+          </section>
+          <!-- [MOCKUP] AI Insights END -->
 
         <!-- Week Tab Content -->
         <div id="week" class="tab-content">
@@ -214,13 +275,6 @@
                   <div class="chart-container chart-week">
                     <canvas id="weekChart"></canvas>
                     <div class="graph-tooltip" id="weekChartTooltip"></div>
-                  </div>
-                </div>
-                <div class="chart-section">
-                  <div class="week-nav-row">
-                    <button id="weekPrevBtn" class="nav-btn nav-btn-sm">◀</button>
-                    <span id="weekTitle" class="week-nav-title">This Week</span>
-                    <button id="weekNextBtn" class="nav-btn nav-btn-sm">▶</button>
                   </div>
                 </div>
               </div>
@@ -267,36 +321,35 @@
 
           <!-- Bottom Cards -->
           <div class="bottom-cards">
-            <section class="card card-small">
-              <h3>Usage Stats</h3>
-              <div class="usage-stats-grid">
-                <div class="stat-box">
-                  <span class="stat-box-value" id="weekTotalTime">0h 0m</span>
-                  <span class="stat-box-label">Total Time</span>
+            <section class="card card-small card-summary">
+              <div class="summary-stats-row">
+                <div class="stat-inline">
+                  <span class="stat-inline-value" id="weekTotalTime">0h 0m</span>
+                  <span class="stat-inline-label">Total Time</span>
                   <span class="stat-box-compare" id="weekTotalCompare"></span>
                 </div>
-                <div class="stat-box">
-                  <span class="stat-box-value" id="weekDailyAvg">0h 0m</span>
-                  <span class="stat-box-label">Daily Average</span>
+                <div class="stat-inline">
+                  <span class="stat-inline-value" id="weekDailyAvg">0h 0m</span>
+                  <span class="stat-inline-label">Daily Avg</span>
                   <span class="stat-box-compare" id="weekDailyAvgCompare"></span>
                 </div>
-                <div class="stat-box">
-                  <span class="stat-box-value" id="weekSessions">0</span>
-                  <span class="stat-box-label">Sessions</span>
+                <div class="stat-inline">
+                  <span class="stat-inline-value" id="weekSessions">0</span>
+                  <span class="stat-inline-label">Sessions</span>
                   <span class="stat-box-compare" id="weekSessionsCompare"></span>
                 </div>
-                <div class="stat-box">
-                  <span class="stat-box-value" id="weekProductivityStat">0%</span>
-                  <span class="stat-box-label">Productivity</span>
+                <div class="stat-inline">
+                  <span class="stat-inline-value" id="weekProductivityStat">0%</span>
+                  <span class="stat-inline-label">Productivity</span>
                   <span class="stat-box-compare" id="weekProductivityCompare"></span>
                 </div>
               </div>
-            </section>
-
-            <section class="card card-small card-goals">
-              <h3>Weekly Goals</h3>
-              <div id="weekGoalsDisplay" class="goals-display">
-                <div class="goals-empty">No goals set. <a href="#" class="goals-add-link" data-page="goals">Add a goal</a></div>
+              <!-- [MOCKUP] Goals section - only visible in mockup mode -->
+              <div class="summary-divider mockup-only hidden"></div>
+              <div class="summary-goals-section mockup-only hidden">
+                <h3>Weekly Goals</h3>
+                <div id="weekGoalsDisplay" class="goals-display">
+                </div>
               </div>
             </section>
 
@@ -350,9 +403,9 @@
             <button class="modal-close" id="addLimitModalClose">&times;</button>
           </div>
           <div class="modal-body">
-            <!-- Category/Domain Selection List -->
+            <!-- Target Selection: Groups > Categories > Subcategories/Domains -->
             <div class="limit-selection-list" id="limitSelectionList">
-              <!-- Categories with expandable domains will be populated here -->
+              <!-- Populated by populateLimitSelectionList() -->
             </div>
 
             <!-- Time Input (shown when something is selected) -->
@@ -413,115 +466,6 @@
         </div>
       </div>
 
-      <!-- Goals Page -->
-      <div id="goalsPage" class="page">
-        <header class="content-header">
-          <h1>Goals</h1>
-        </header>
-        <div class="page-content">
-          <section class="card" id="goalsSection">
-            <h2>My Goals</h2>
-            <p class="section-description">Set daily or weekly goals for productive activities</p>
-            <div id="goalsList" class="goals-list">
-              <!-- Goals will be populated here -->
-            </div>
-            <button id="addGoalBtn" class="btn-add">+ Add Goal</button>
-          </section>
-
-          <!-- Achievements Section -->
-          <section class="card achievements-card">
-            <h2>🏆 Achievements</h2>
-            <p class="section-description">Your milestones and badges</p>
-            <div class="achievements-grid" id="achievementsGrid">
-              <!-- Will be populated by JS -->
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <!-- Add Goal Modal -->
-      <div id="addGoalModal" class="modal-overlay">
-        <div class="modal-content modal-goal">
-          <div class="modal-header">
-            <h3 id="goalModalTitle">Add Goal</h3>
-            <button class="modal-close" id="addGoalModalClose">&times;</button>
-          </div>
-          <div class="modal-body">
-            <!-- Goal Type Pills -->
-            <div class="form-group">
-              <label class="form-label">What do you want to track?</label>
-              <div class="pill-group goal-type-pills" id="goalTypePills">
-                <button type="button" class="pill-btn active" data-value="productive">
-                  <span class="pill-icon">💪</span>
-                  <span class="pill-text">Productive</span>
-                </button>
-                <button type="button" class="pill-btn" data-value="learning">
-                  <span class="pill-icon">📚</span>
-                  <span class="pill-text">Learning</span>
-                </button>
-                <button type="button" class="pill-btn" data-value="limit_unproductive">
-                  <span class="pill-icon">🚫</span>
-                  <span class="pill-text">Limit Distractions</span>
-                </button>
-              </div>
-              <input type="hidden" id="goalType" value="productive">
-            </div>
-
-            <!-- Comparison Toggle -->
-            <div class="form-group" id="goalComparisonGroup">
-              <label class="form-label">Goal direction</label>
-              <div class="toggle-pills" id="goalComparisonToggle">
-                <button type="button" class="toggle-pill active" data-value="min">At least</button>
-                <button type="button" class="toggle-pill" data-value="max">At most</button>
-              </div>
-              <p class="form-hint" id="goalComparisonHint">Automatically set based on goal type</p>
-              <input type="hidden" id="goalComparison" value="min">
-            </div>
-
-            <!-- Time Selection -->
-            <div class="form-group">
-              <label class="form-label">Target time</label>
-              <div class="avg-info-box" id="goalAvgInfo">
-                <span class="avg-info-icon">📊</span>
-                <span class="avg-info-text">Your 30-day average: <strong id="goalAvgValue">calculating...</strong></span>
-              </div>
-              <div class="time-picker-modern">
-                <div class="time-presets" id="goalTimePresets">
-                  <!-- Presets will be dynamically generated based on 30-day average -->
-                  <div class="presets-loading">Loading...</div>
-                </div>
-                <div class="time-display-box">
-                  <button type="button" class="time-adjust-btn" id="goalTimeDecrease">−</button>
-                  <div class="time-display">
-                    <span class="time-value" id="goalTimeDisplay">2h 0m</span>
-                  </div>
-                  <button type="button" class="time-adjust-btn" id="goalTimeIncrease">+</button>
-                </div>
-                <input type="hidden" id="goalHours" value="2">
-                <input type="hidden" id="goalMinutes" value="0">
-              </div>
-            </div>
-
-            <!-- Active Days (Circle Buttons) -->
-            <div class="form-group" id="goalDaysGroup">
-              <label class="form-label">Active days</label>
-              <div class="day-circles" id="goalDayCircles">
-                <button type="button" class="day-circle active" data-day="0">S</button>
-                <button type="button" class="day-circle active" data-day="1">M</button>
-                <button type="button" class="day-circle active" data-day="2">T</button>
-                <button type="button" class="day-circle active" data-day="3">W</button>
-                <button type="button" class="day-circle active" data-day="4">T</button>
-                <button type="button" class="day-circle active" data-day="5">F</button>
-                <button type="button" class="day-circle active" data-day="6">S</button>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button id="goalCancelBtn" class="btn-secondary">Cancel</button>
-            <button id="goalSaveBtn" class="btn-primary">Save Goal</button>
-          </div>
-        </div>
-      </div>
 
       <!-- Custom Category Modal -->
       <div id="customCategoryModal" class="modal-overlay">
@@ -629,28 +573,6 @@
             <div class="flowchart-legend" id="flowchartLegend"></div>
           </section>
 
-          <!-- Focus Stats Section -->
-          <section class="card focus-stats-card">
-            <h2>Focus Analysis</h2>
-            <div class="focus-stats-grid">
-              <div class="focus-stat-item">
-                <div class="focus-stat-icon productive">🎯</div>
-                <div class="focus-stat-info">
-                  <div class="focus-stat-label">Longest Focus</div>
-                  <div class="focus-stat-value" id="flowchartLongestFocus">0m</div>
-                  <div class="focus-stat-detail" id="flowchartLongestFocusTime">--</div>
-                </div>
-              </div>
-              <div class="focus-stat-item">
-                <div class="focus-stat-icon unproductive">⚠️</div>
-                <div class="focus-stat-info">
-                  <div class="focus-stat-label">Longest Distraction</div>
-                  <div class="focus-stat-value" id="flowchartLongestDistraction">0m</div>
-                  <div class="focus-stat-detail" id="flowchartLongestDistractionTime">--</div>
-                </div>
-              </div>
-            </div>
-          </section>
         </div>
       </div>
 
@@ -679,10 +601,6 @@
               <div class="report-stat-box">
                 <span class="report-stat-value" id="reportProductivity">0%</span>
                 <span class="report-stat-label">Productivity</span>
-              </div>
-              <div class="report-stat-box">
-                <span class="report-stat-value" id="reportGoalsCompleted">0/0</span>
-                <span class="report-stat-label">Goals Completed</span>
               </div>
             </div>
           </section>
@@ -756,197 +674,18 @@
               <!-- Will be rendered by JS -->
             </div>
           </section>
-        </div>
-      </div>
 
-      <!-- Focus Mode Page -->
-      <div id="focusPage" class="page">
-        <header class="content-header">
-          <h1>🍅 Focus Mode</h1>
-        </header>
-        <div class="page-content">
-          <div class="focus-mode-container">
-            <!-- Timer Card -->
-            <div class="focus-timer-card">
-              <div class="focus-timer-display">
-                <svg class="focus-timer-progress" id="focusTimerProgress" viewBox="0 0 200 200">
-                  <circle class="bg" cx="100" cy="100" r="90"/>
-                  <circle class="progress" cx="100" cy="100" r="90"
-                    stroke-dasharray="565.48" stroke-dashoffset="0" id="focusProgressCircle"/>
-                </svg>
-                <div class="focus-timer-text">
-                  <div class="focus-timer-time" id="focusTimerTime">25:00</div>
-                  <div class="focus-timer-label" id="focusTimerLabel">Focus</div>
-                </div>
-              </div>
-              <div class="focus-timer-controls">
-                <button class="focus-control-btn secondary" id="focusResetBtn">↺</button>
-                <button class="focus-control-btn primary" id="focusStartBtn">▶</button>
-                <button class="focus-control-btn secondary" id="focusSkipBtn">⏭</button>
-              </div>
-            </div>
-
-            <!-- Settings Card -->
-            <div class="focus-settings-card">
-              <h3>⚙️ Settings</h3>
-              <div class="focus-setting-row">
-                <span class="focus-setting-label">Focus Duration</span>
-                <div class="focus-setting-control">
-                  <input type="number" id="focusDuration" value="25" min="1" max="60">
-                  <span>min</span>
-                </div>
-              </div>
-              <div class="focus-setting-row">
-                <span class="focus-setting-label">Short Break</span>
-                <div class="focus-setting-control">
-                  <input type="number" id="focusShortBreak" value="5" min="1" max="30">
-                  <span>min</span>
-                </div>
-              </div>
-              <div class="focus-setting-row">
-                <span class="focus-setting-label">Long Break (every 4 sessions)</span>
-                <div class="focus-setting-control">
-                  <input type="number" id="focusLongBreak" value="15" min="1" max="60">
-                  <span>min</span>
-                </div>
-              </div>
-              <div class="focus-setting-row" style="flex-direction: column; align-items: flex-start;">
-                <span class="focus-setting-label">Block During Focus</span>
-                <div class="focus-block-categories" id="focusBlockCategories">
-                  <span class="focus-block-tag active" data-category="social">Social</span>
-                  <span class="focus-block-tag active" data-category="entertainment">Entertainment</span>
-                  <span class="focus-block-tag active" data-category="games">Games</span>
-                  <span class="focus-block-tag" data-category="shopping">Shopping</span>
-                  <span class="focus-block-tag" data-category="news">News</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Today's Stats Card -->
-            <div class="focus-stats-card">
-              <h3>Today's Focus</h3>
-              <div class="focus-today-stats">
-                <div class="focus-today-stat">
-                  <div class="focus-today-stat-value" id="focusCompletedSessions">0</div>
-                  <div class="focus-today-stat-label">Sessions</div>
-                </div>
-                <div class="focus-today-stat">
-                  <div class="focus-today-stat-value" id="focusTotalTime">0m</div>
-                  <div class="focus-today-stat-label">Focus Time</div>
-                </div>
-                <div class="focus-today-stat">
-                  <div class="focus-today-stat-value" id="focusBlockedCount">0</div>
-                  <div class="focus-today-stat-label">Blocked</div>
-                </div>
-              </div>
-              <div class="focus-tomatoes" id="focusTomatoes">
-                <span class="focus-tomato">🍅</span>
-                <span class="focus-tomato">🍅</span>
-                <span class="focus-tomato">🍅</span>
-                <span class="focus-tomato">🍅</span>
-              </div>
-            </div>
-
-            <!-- History Card -->
-            <div class="focus-history-card">
-              <h3>📈 This Week</h3>
-              <div class="focus-history-week" id="focusHistoryWeek">
-                <!-- Will be populated by JS -->
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Downtime Page -->
-      <div id="downtimePage" class="page">
-        <header class="content-header">
-          <h1>🌙 Downtime</h1>
-          <p class="header-subtitle">Schedule times when certain categories will be blocked</p>
-        </header>
-        <div class="page-content">
-          <section class="card">
-            <div class="setting-item">
-              <div class="setting-info">
-                <div class="setting-label">Enable Downtime</div>
-                <div class="setting-description">Automatically block categories during scheduled hours</div>
-              </div>
-              <label class="toggle">
-                <input type="checkbox" id="downtimeEnabledPage">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-          </section>
-          
-          <section class="card" id="downtimeSettingsCard">
-            <h2>Schedule</h2>
-            <div class="downtime-schedule-grid">
-              <div class="setting-item">
-                <div class="setting-info">
-                  <div class="setting-label">Start Time</div>
-                  <div class="setting-description">When blocking begins</div>
-                </div>
-                <input type="time" id="downtimeStartPage" class="form-control time-input" value="22:00">
-              </div>
-              <div class="setting-item">
-                <div class="setting-info">
-                  <div class="setting-label">End Time</div>
-                  <div class="setting-description">When blocking ends</div>
-                </div>
-                <input type="time" id="downtimeEndPage" class="form-control time-input" value="07:00">
-              </div>
-            </div>
-            
-            <h3 style="margin-top: 24px; margin-bottom: 12px;">Active Days</h3>
-            <div class="day-selector" id="downtimeDaysPage">
-              <button class="day-btn active" data-day="0">Sun</button>
-              <button class="day-btn active" data-day="1">Mon</button>
-              <button class="day-btn active" data-day="2">Tue</button>
-              <button class="day-btn active" data-day="3">Wed</button>
-              <button class="day-btn active" data-day="4">Thu</button>
-              <button class="day-btn active" data-day="5">Fri</button>
-              <button class="day-btn active" data-day="6">Sat</button>
-            </div>
-            
-            <h3 style="margin-top: 24px; margin-bottom: 12px;">Categories to Block</h3>
-            <p class="section-description">Select which categories should be blocked during downtime</p>
-            <div class="downtime-categories" id="downtimeCategoriesPage">
-              <!-- Will be populated by JS -->
-            </div>
-          </section>
-          
-          <section class="card">
-            <h2>🔒 Whitelist Mode</h2>
-            <p class="section-description">Only allow access to approved sites (blocks everything else)</p>
-            <div class="setting-item">
-              <div class="setting-info">
-                <div class="setting-label">Enable Whitelist Mode</div>
-                <div class="setting-description">⚠️ All sites except whitelisted ones will be blocked</div>
-              </div>
-              <label class="toggle">
-                <input type="checkbox" id="whitelistEnabledPage">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div id="whitelistOptionsPage" style="margin-top: 16px;">
-              <h3 style="margin-bottom: 12px;">Allowed Sites</h3>
-              <div id="whitelistSitesPage" class="whitelist-sites-list">
-                <!-- Will be populated by JS -->
-              </div>
-              <div class="add-whitelist-form" style="margin-top: 12px;">
-                <input type="text" id="newWhitelistDomainPage" class="form-control" placeholder="example.com">
-                <button id="addWhitelistBtnPage" class="btn-primary">Add</button>
-              </div>
-              
-              <h3 style="margin-top: 20px; margin-bottom: 12px;">Allow Categories</h3>
-              <p class="section-description">Sites from these categories are always allowed</p>
-              <div class="whitelist-categories" id="whitelistCategoriesPage">
-                <!-- Will be populated by JS -->
-              </div>
+          <!-- Category Classification -->
+          <section class="card report-classification-card">
+            <h2>Category Classification</h2>
+            <p class="section-description">How your sites are classified — grouped by productivity, category, and subcategory</p>
+            <div class="report-classification" id="reportClassification">
+              <!-- Will be rendered by JS -->
             </div>
           </section>
         </div>
       </div>
+
 
       <!-- Settings Page -->
       <div id="settingsPage" class="page">
@@ -1015,59 +754,6 @@
                 <input type="checkbox" id="notificationsEnabled">
                 <span class="toggle-slider"></span>
               </label>
-            </div>
-          </section>
-
-          <!-- Downtime / Scheduled Blocking -->
-          <section class="card">
-            <h2>Downtime</h2>
-            <p class="section-description">Schedule times when certain categories will be blocked</p>
-            <div class="setting-item">
-              <div class="setting-info">
-                <div class="setting-label">Enable Downtime</div>
-                <div class="setting-description">Automatically block categories during scheduled hours</div>
-              </div>
-              <label class="toggle">
-                <input type="checkbox" id="downtimeEnabled">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div id="downtimeOptions" class="downtime-options">
-              <div class="setting-item">
-                <div class="setting-info">
-                  <div class="setting-label">Start Time</div>
-                  <div class="setting-description">When blocking begins</div>
-                </div>
-                <input type="time" id="downtimeStart" class="form-control time-input" value="22:00">
-              </div>
-              <div class="setting-item">
-                <div class="setting-info">
-                  <div class="setting-label">End Time</div>
-                  <div class="setting-description">When blocking ends</div>
-                </div>
-                <input type="time" id="downtimeEnd" class="form-control time-input" value="07:00">
-              </div>
-              <div class="setting-item">
-                <div class="setting-info">
-                  <div class="setting-label">Active Days</div>
-                  <div class="setting-description">Choose which days downtime applies</div>
-                </div>
-                <div class="day-selector" id="downtimeDays">
-                  <button class="day-btn active" data-day="0">S</button>
-                  <button class="day-btn active" data-day="1">M</button>
-                  <button class="day-btn active" data-day="2">T</button>
-                  <button class="day-btn active" data-day="3">W</button>
-                  <button class="day-btn active" data-day="4">T</button>
-                  <button class="day-btn active" data-day="5">F</button>
-                  <button class="day-btn active" data-day="6">S</button>
-                </div>
-              </div>
-              <div class="setting-group" style="margin-top: 16px;">
-                <div class="setting-label" style="margin-bottom: 8px;">Categories to Block</div>
-                <div class="downtime-categories" id="downtimeCategories">
-                  <!-- Will be populated by JS -->
-                </div>
-              </div>
             </div>
           </section>
 
@@ -1268,7 +954,6 @@
               </div>
               <div class="about-item">
                 <button id="exportDataBtn" class="btn-secondary">Export Data</button>
-                <button id="downloadDebugBtn" class="btn-secondary">🐛 Download Debug Log</button>
                 <button id="clearDataBtn" class="btn-danger">Clear All Data</button>
               </div>
             </div>
@@ -1305,6 +990,10 @@
       </div>
       <div class="detail-note" id="detailModalNote">
         This domain was classified based on the scoring system above.
+      </div>
+      <div class="detail-section" id="detailModalVisitsSection" style="display:none;">
+        <div class="detail-section-title">Visit History</div>
+        <div class="detail-visits-list" id="detailModalVisitsList"></div>
       </div>
     </div>
   </div>

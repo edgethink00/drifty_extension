@@ -34,15 +34,18 @@
 
     <!-- Main View -->
     <div id="mainView" class="view">
-      <!-- Today Stats Card -->
+      <!-- Stats Card with Day Toggle -->
       <section class="stats-card">
         <div class="stats-header">
-          <span class="stats-label">Today</span>
+          <div class="day-toggle">
+            <button class="day-btn active" id="todayBtn">Today</button>
+            <button class="day-btn" id="yesterdayBtn">Yesterday</button>
+          </div>
           <span class="stats-date" id="todayDate"></span>
         </div>
         <div class="stats-content">
           <div class="time-ring-container">
-            <canvas id="timeRingCanvas" width="120" height="120"></canvas>
+            <canvas id="timeRingCanvas" width="100" height="100"></canvas>
             <div class="time-ring-center">
               <span class="time-value" id="totalTime">0h 0m</span>
               <span class="time-sublabel">total</span>
@@ -90,39 +93,6 @@
           <!-- Most used sites will be populated here -->
         </div>
         <button id="showMoreSitesBtn" class="show-more-btn hidden">Show More</button>
-      </section>
-
-      <!-- Focus Mode Card -->
-      <section class="focus-card" id="focusModeCard">
-        <div class="focus-header">
-          <div class="focus-icon-wrap">
-            <span class="focus-icon">🍅</span>
-          </div>
-          <div class="focus-info">
-            <div class="focus-title">Focus Mode</div>
-            <div class="focus-subtitle" id="focusStatus">Stay focused, block distractions</div>
-          </div>
-          <button id="focusToggleBtn" class="focus-toggle-btn">Start</button>
-        </div>
-        <div id="focusActiveSection" class="focus-active-section hidden">
-          <div class="focus-timer" id="focusTimer">25:00</div>
-          <div class="focus-progress">
-            <div class="focus-progress-fill" id="focusProgressFill"></div>
-          </div>
-          <button id="stopFocusBtn" class="focus-stop-btn">End Session</button>
-        </div>
-        <div id="focusSettingsSection" class="focus-settings-section hidden">
-          <div class="focus-duration-select">
-            <label>Duration:</label>
-            <select id="focusDuration" class="focus-select">
-              <option value="15">15 min</option>
-              <option value="25" selected>25 min</option>
-              <option value="45">45 min</option>
-              <option value="60">1 hour</option>
-              <option value="90">1.5 hours</option>
-            </select>
-          </div>
-        </div>
       </section>
 
       <!-- Footer -->

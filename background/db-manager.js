@@ -36,6 +36,7 @@ class DBManager {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
+        const oldVersion = event.oldVersion;
 
         // Sessions store
         if (!db.objectStoreNames.contains(DB_CONFIG.STORES.SESSIONS)) {
@@ -54,11 +55,29 @@ class DBManager {
           });
         }
 
-        // Limits store
-        if (!db.objectStoreNames.contains(DB_CONFIG.STORES.LIMITS)) {
-          db.createObjectStore(DB_CONFIG.STORES.LIMITS, {
-            keyPath: 'category'
-          });
+        // Limits store - migrate from category keyPath to id keyPath (v5)
+        if (oldVersion < 5 && db.objectStoreNames.contains(DB_CONFIG.STORES.LIMITS)) {
+          const txn = event.target.transaction;
+          const oldStore = txn.objectStore(DB_CONFIG.STORES.LIMITS);
+          const getAllReq = oldStore.getAll();
+          getAllReq.onsuccess = () => {
+            const oldLimits = getAllReq.result || [];
+            // deleteObjectStore/createObjectStore are valid within versionchange transaction callbacks
+            db.deleteObjectStore(DB_CONFIG.STORES.LIMITS);
+            const newStore = db.createObjectStore(DB_CONFIG.STORES.LIMITS, { keyPath: 'id' });
+            newStore.createIndex('category', 'category', { unique: false });
+            oldLimits.forEach(limit => {
+              newStore.put({
+                ...limit,
+                id: `cat:${limit.category}`,
+                targetType: 'category',
+                targetValue: null
+              });
+            });
+          };
+        } else if (!db.objectStoreNames.contains(DB_CONFIG.STORES.LIMITS)) {
+          const limitsStore = db.createObjectStore(DB_CONFIG.STORES.LIMITS, { keyPath: 'id' });
+          limitsStore.createIndex('category', 'category', { unique: false });
         }
 
         // Settings store
@@ -68,15 +87,6 @@ class DBManager {
           });
           // Initialize default settings
           settingsStore.add({ key: 'general', ...DEFAULT_SETTINGS });
-        }
-
-        // Focus sessions store
-        if (!db.objectStoreNames.contains(DB_CONFIG.STORES.FOCUS_SESSIONS)) {
-          const focusStore = db.createObjectStore(DB_CONFIG.STORES.FOCUS_SESSIONS, {
-            keyPath: 'id',
-            autoIncrement: true
-          });
-          focusStore.createIndex('date', 'date', { unique: false });
         }
 
         // Custom categories store
@@ -444,17 +454,17 @@ class DBManager {
   }
 
   /**
-   * Get or create limit for category
-   * @param {string} category - Category name
+   * Get limit by ID
+   * @param {string} id - Limit ID (e.g., "cat:social", "sub:social:messaging", "dom:social:reddit.com")
    * @returns {Promise<Object>} Limit object
    */
-  async getLimit(category) {
+  async getLimit(id) {
     await this.ensureReady();
     const transaction = this.db.transaction([DB_CONFIG.STORES.LIMITS], 'readonly');
     const store = transaction.objectStore(DB_CONFIG.STORES.LIMITS);
 
     return new Promise((resolve, reject) => {
-      const request = store.get(category);
+      const request = store.get(id);
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
     });
@@ -477,33 +487,51 @@ class DBManager {
   }
 
   /**
-   * Save limit for category
-   * @param {string} category - Category name
-   * @param {Object} limit - Limit object
+   * Save limit
+   * @param {Object} limit - Limit object with id, category, targetType, targetValue, etc.
    */
   async saveLimit(category, limit) {
     await this.ensureReady();
     const transaction = this.db.transaction([DB_CONFIG.STORES.LIMITS], 'readwrite');
     const store = transaction.objectStore(DB_CONFIG.STORES.LIMITS);
 
+    // Build ID from target info
+    const id = limit.id || this.buildLimitId(category, limit.targetType, limit.targetValue);
+
     return new Promise((resolve, reject) => {
-      const request = store.put({ category, ...limit });
+      const request = store.put({
+        id,
+        category,
+        targetType: limit.targetType || 'category',
+        targetValue: limit.targetValue || null,
+        ...limit
+      });
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
   }
 
   /**
-   * Delete limit for category
-   * @param {string} category - Category name
+   * Build limit ID from components
    */
-  async deleteLimit(category) {
+  buildLimitId(category, targetType, targetValue) {
+    if (targetType === 'group') return `grp:${targetValue}`;
+    if (targetType === 'subcategory') return `sub:${category}:${targetValue}`;
+    if (targetType === 'domain') return `dom:${category}:${targetValue}`;
+    return `cat:${category}`;
+  }
+
+  /**
+   * Delete limit by ID
+   * @param {string} id - Limit ID
+   */
+  async deleteLimit(id) {
     await this.ensureReady();
     const transaction = this.db.transaction([DB_CONFIG.STORES.LIMITS], 'readwrite');
     const store = transaction.objectStore(DB_CONFIG.STORES.LIMITS);
 
     return new Promise((resolve, reject) => {
-      const request = store.delete(category);
+      const request = store.delete(id);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -571,60 +599,6 @@ class DBManager {
   }
 
   /**
-   * Save focus session
-   * @param {Object} session - Focus session object { date, duration, completedAt }
-   */
-  async saveFocusSession(session) {
-    await this.ensureReady();
-    const transaction = this.db.transaction([DB_CONFIG.STORES.FOCUS_SESSIONS], 'readwrite');
-    const store = transaction.objectStore(DB_CONFIG.STORES.FOCUS_SESSIONS);
-
-    return new Promise((resolve, reject) => {
-      const request = store.add(session);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  /**
-   * Get focus sessions for a date
-   * @param {string} date - Date in YYYY-MM-DD format
-   * @returns {Promise<Array>} Array of focus sessions
-   */
-  async getFocusSessions(date) {
-    await this.ensureReady();
-    const transaction = this.db.transaction([DB_CONFIG.STORES.FOCUS_SESSIONS], 'readonly');
-    const store = transaction.objectStore(DB_CONFIG.STORES.FOCUS_SESSIONS);
-    const index = store.index('date');
-
-    return new Promise((resolve, reject) => {
-      const request = index.getAll(date);
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  /**
-   * Get focus sessions for a date range
-   * @param {string} startDate - Start date in YYYY-MM-DD format
-   * @param {string} endDate - End date in YYYY-MM-DD format
-   * @returns {Promise<Array>} Array of focus sessions
-   */
-  async getFocusSessionsRange(startDate, endDate) {
-    await this.ensureReady();
-    const transaction = this.db.transaction([DB_CONFIG.STORES.FOCUS_SESSIONS], 'readonly');
-    const store = transaction.objectStore(DB_CONFIG.STORES.FOCUS_SESSIONS);
-    const index = store.index('date');
-    const range = IDBKeyRange.bound(startDate, endDate);
-
-    return new Promise((resolve, reject) => {
-      const request = index.getAll(range);
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  /**
    * Get all sessions from database
    * @returns {Promise<Array>} Array of all sessions
    */
@@ -648,22 +622,6 @@ class DBManager {
     await this.ensureReady();
     const transaction = this.db.transaction([DB_CONFIG.STORES.DAILY_STATS], 'readonly');
     const store = transaction.objectStore(DB_CONFIG.STORES.DAILY_STATS);
-
-    return new Promise((resolve, reject) => {
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  /**
-   * Get all focus sessions from database
-   * @returns {Promise<Array>} Array of all focus sessions
-   */
-  async getAllFocusSessions() {
-    await this.ensureReady();
-    const transaction = this.db.transaction([DB_CONFIG.STORES.FOCUS_SESSIONS], 'readonly');
-    const store = transaction.objectStore(DB_CONFIG.STORES.FOCUS_SESSIONS);
 
     return new Promise((resolve, reject) => {
       const request = store.getAll();
@@ -698,8 +656,7 @@ class DBManager {
     const storesToClear = [
       DB_CONFIG.STORES.SESSIONS,
       DB_CONFIG.STORES.DAILY_STATS,
-      DB_CONFIG.STORES.LIMITS,
-      DB_CONFIG.STORES.FOCUS_SESSIONS
+      DB_CONFIG.STORES.LIMITS
     ];
 
     if (!keepSettings) {
@@ -846,12 +803,11 @@ class DBManager {
   async exportAllData() {
     await this.ensureReady();
 
-    const [sessions, dailyStats, limits, settings, focusSessions, customCategories, siteOverrides] = await Promise.all([
+    const [sessions, dailyStats, limits, settings, customCategories, siteOverrides] = await Promise.all([
       this.getAllSessions(),
       this.getAllDailyStats(),
       this.getAllLimits(),
       this.getSettings(),
-      this.getAllFocusSessions(),
       this.getAllCustomCategories(),
       this.getAllSiteOverrides()
     ]);
@@ -861,7 +817,6 @@ class DBManager {
       dailyStats,
       limits,
       settings,
-      focusSessions,
       customCategories,
       siteOverrides
     };

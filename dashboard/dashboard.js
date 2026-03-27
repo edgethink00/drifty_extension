@@ -1734,6 +1734,7 @@ document.getElementById('privacyHideTimeline')?.addEventListener('change', async
 });
 
 document.getElementById('exportDataBtn')?.addEventListener('click', exportData);
+document.getElementById('downloadDebugBtn')?.addEventListener('click', downloadDebugLog);
 document.getElementById('clearDataBtn')?.addEventListener('click', async () => {
   if (confirm('Are you sure you want to clear ALL data? This cannot be undone.')) {
     alert('Clear data functionality not yet implemented');
@@ -9902,4 +9903,1337 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', startServerStatusMonitoring);
 } else {
   startServerStatusMonitoring();
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  MOCKUP MODE — START                                       ║
+// ║  To remove mockup feature:                                 ║
+// ║  1. Delete this entire block (to MOCKUP MODE — END)        ║
+// ║  2. Delete dashboard/mockup.css & mockup HTML in .html     ║
+// ║  3. Search [MOCKUP] comments above and clean up            ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+let mockupModeActive = false;
+let _mockTodayStats = null;
+let _mockWeekData = null;
+let _mockSessions = null;
+let originalSendMessage = null;
+
+/**
+ * Generate realistic mock data for business plan mockups
+ * KEY FEATURE: Same domains appear in DIFFERENT categories based on context
+ * e.g., youtube.com → Entertainment (music videos) AND Learning (tutorials)
+ */
+function generateMockData() {
+  const today = getTodayDate();
+
+  // Session definitions - KEY: same domain, different categories
+  // This showcases deTime's intelligent context-aware classification
+  const sessionDefs = [
+    // Morning: Productivity block
+    { domain: 'github.com', cat: 'workspace', dur: 3600000, title: 'GitHub - Pull Request Review' },        // 1h
+    { domain: 'youtube.com', cat: 'education', dur: 4200000, title: 'YouTube - React 19 New Features Tutorial' }, // 1h10m ★ youtube = education (TOP)
+    { domain: 'github.com', cat: 'workspace', dur: 2400000, title: 'GitHub - Code Review' },                // 40m
+    { domain: 'notion.so', cat: 'workspace', dur: 2700000, title: 'Notion - Product Roadmap' },             // 45m
+
+    // Mid-morning break
+    { domain: 'reddit.com', cat: 'news', dur: 1500000, title: 'Reddit - r/technology' },                        // 25m ★ reddit = news
+    { domain: 'youtube.com', cat: 'entertainment', dur: 1200000, title: 'YouTube - Daily Dose of Internet' },   // 20m ★ youtube = entertainment (LOW)
+
+    // Focused learning block
+    { domain: 'coursera.org', cat: 'education', dur: 3600000, title: 'Coursera - Machine Learning Specialization' }, // 1h
+    { domain: 'reddit.com', cat: 'education', dur: 1800000, title: 'Reddit - r/MachineLearning' },              // 30m ★ reddit = education
+
+    // Afternoon: Work
+    { domain: 'figma.com', cat: 'workspace', dur: 3000000, title: 'Figma - Dashboard Redesign' },           // 50m
+    { domain: 'github.com', cat: 'workspace', dur: 2700000, title: 'GitHub - Feature Branch Push' },        // 45m
+    { domain: 'youtube.com', cat: 'workspace', dur: 3600000, title: 'YouTube - Lo-Fi Study Music' },        // 1h ★ youtube = workspace (STUDY MUSIC - HIGH)
+
+    // Afternoon break
+    { domain: 'twitter.com', cat: 'social', dur: 1500000, title: 'X - Timeline' },                              // 25m
+    { domain: 'reddit.com', cat: 'social', dur: 1200000, title: 'Reddit - r/funny, r/pics' },                  // 20m ★ reddit = social
+
+    // Evening: Mixed
+    { domain: 'netflix.com', cat: 'entertainment', dur: 2400000, title: 'Netflix - Black Mirror S7' },         // 40m
+  ];
+
+  // Build sessions and aggregate stats
+  const sessions = [];
+  const categories = {};
+  const domains = {};
+  let totalTime = 0;
+  const baseTime = new Date(today + 'T08:30:00').getTime();
+  let sessionTime = baseTime;
+
+  for (const def of sessionDefs) {
+    const gap = 60000 + Math.random() * 240000; // 1-5 min gap
+    sessionTime += gap;
+
+    sessions.push({
+      id: `mock-${sessions.length}`,
+      date: today,
+      startTime: sessionTime,
+      endTime: sessionTime + def.dur,
+      duration: def.dur,
+      category: def.cat,
+      visits: [{
+        url: `https://${def.domain}/`,
+        domain: def.domain,
+        title: def.title,
+        time: sessionTime,
+        duration: def.dur
+      }]
+    });
+    sessionTime += def.dur;
+
+    // Aggregate into categories
+    if (!categories[def.cat]) {
+      categories[def.cat] = { time: 0, sessionCount: 0, visits: 0, topSites: [] };
+    }
+    categories[def.cat].time += def.dur;
+    categories[def.cat].visits += 1;
+    categories[def.cat].sessionCount += 1;
+
+    // Track domain time per category for topSites
+    const existing = categories[def.cat].topSites.find(s => s.domain === def.domain);
+    if (existing) {
+      existing.time += def.dur;
+      existing.visits += 1;
+    } else {
+      categories[def.cat].topSites.push({ domain: def.domain, time: def.dur, visits: 1 });
+    }
+
+    // Domain aggregation (uses primary/first category seen)
+    if (!domains[def.domain]) {
+      domains[def.domain] = { time: 0, category: def.cat };
+    }
+    domains[def.domain].time += def.dur;
+    totalTime += def.dur;
+  }
+
+  // Sort topSites
+  for (const cat of Object.values(categories)) {
+    cat.topSites.sort((a, b) => b.time - a.time);
+  }
+
+  const todayStats = {
+    date: today,
+    totalTime: totalTime,
+    pickups: 16,
+    sessions: sessions.length,
+    categories: categories,
+    domains: domains,
+    longestSession: 3600000
+  };
+
+  // Generate 7 days of week data with realistic variation
+  const weekData = [];
+  const dayMultipliers = [0.75, 0.9, 1.0, 0.85, 1.05, 0.55, 0.45];
+  const todayObj = new Date(today);
+  const dayOfWeek = (todayObj.getDay() - weekStartDay + 7) % 7;
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(todayObj);
+    d.setDate(d.getDate() - dayOfWeek + i);
+    const dateStr = formatDateLocal(d);
+    const mult = dayMultipliers[i];
+    const dayCategories = {};
+
+    for (const [cat, data] of Object.entries(categories)) {
+      dayCategories[cat] = {
+        time: Math.round(data.time * mult * (0.8 + Math.random() * 0.4)),
+        sessionCount: Math.round(data.sessionCount * mult),
+        visits: Math.round(data.visits * mult),
+        topSites: data.topSites.map(s => ({
+          ...s,
+          time: Math.round(s.time * mult * (0.8 + Math.random() * 0.4))
+        }))
+      };
+    }
+
+    const dayTotal = Object.values(dayCategories).reduce((s, c) => s + c.time, 0);
+    weekData.push({
+      date: dateStr,
+      totalTime: dayTotal,
+      categories: dayCategories,
+      sessions: Math.round(sessions.length * mult),
+      pickups: Math.round(16 * mult)
+    });
+  }
+
+  // Mock goals data - matches getGoalTypeInfo types
+  const mockGoals = [
+    {
+      type: 'productive',
+      frequency: 'daily',
+      comparison: 'min',
+      targetTime: 14400000, // 4h productive
+      activeDays: [0, 1, 2, 3, 4, 5, 6],
+      history: {}
+    },
+    {
+      type: 'limit_unproductive',
+      frequency: 'daily',
+      comparison: 'max',
+      targetTime: 7200000, // 2h unproductive limit
+      activeDays: [0, 1, 2, 3, 4, 5, 6],
+      history: {}
+    }
+  ];
+
+  return { todayStats, sessions, weekData, categories, domains, mockGoals };
+}
+
+/**
+ * Intercept chrome.runtime.sendMessage to return mock data
+ */
+function enableMockData() {
+  if (mockupModeActive) return;
+  mockupModeActive = true;
+
+  const mockData = generateMockData();
+  _mockTodayStats = mockData.todayStats;
+  _mockWeekData = mockData.weekData;
+  _mockSessions = mockData.sessions;
+  originalSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
+
+  chrome.runtime.sendMessage = function(message, ...args) {
+    // Return a promise that resolves with mock data
+    const type = message?.type;
+
+    if (type === 'GET_TODAY_STATS') {
+      return Promise.resolve({ success: true, data: mockData.todayStats });
+    }
+
+    if (type === 'GET_DATE_STATS') {
+      const requestDate = message.date;
+      const found = mockData.weekData.find(d => d.date === requestDate);
+      if (found) {
+        // Generate sessions for that day
+        const daySessions = mockData.sessions.map(s => ({
+          ...s,
+          date: requestDate,
+          id: `mock-${requestDate}-${Math.random().toString(36).substr(2, 6)}`
+        }));
+        return Promise.resolve({
+          success: true,
+          data: { stats: found, sessions: daySessions }
+        });
+      }
+      // For any other date, return lighter data
+      return Promise.resolve({
+        success: true,
+        data: {
+          stats: {
+            date: requestDate,
+            totalTime: Math.round(mockData.todayStats.totalTime * (0.5 + Math.random() * 0.5)),
+            categories: mockData.todayStats.categories,
+            domains: mockData.todayStats.domains,
+            pickups: Math.round(10 + Math.random() * 8)
+          },
+          sessions: mockData.sessions.slice(0, 15)
+        }
+      });
+    }
+
+    if (type === 'GET_CATEGORIES') {
+      // Pass through, then ensure 'education' key exists (mock data uses it)
+      return originalSendMessage(message, ...args).then(response => {
+        if (response?.data && !response.data.education) {
+          // Copy learning category as education for mock data compatibility
+          response.data.education = response.data.learning
+            ? { ...response.data.learning, name: 'Learning' }
+            : { name: 'Learning', icon: '📚', color: '#A3D8F4', domains: [], keywords: [] };
+        }
+        return response;
+      });
+    }
+
+    if (type === 'GET_SETTINGS') {
+      // Inject mock goals into real settings
+      return originalSendMessage(message, ...args).then(response => {
+        const data = response?.data || {};
+        data.goals = mockData.mockGoals;
+        return { success: true, data };
+      });
+    }
+
+    if (type === 'GET_CURRENT_SESSION') {
+      return Promise.resolve({
+        success: true,
+        data: {
+          session: {
+            domain: 'github.com',
+            category: 'workspace',
+            startTime: Date.now() - 1200000,
+            duration: 1200000,
+            visits: [{
+              url: 'https://github.com/',
+              domain: 'github.com',
+              title: 'GitHub - Feature Branch',
+              time: Date.now() - 1200000,
+              duration: 1200000
+            }]
+          }
+        }
+      });
+    }
+
+    if (type === 'GET_SYNC_STATUS') {
+      return Promise.resolve({
+        success: true,
+        data: { nextSyncTime: Date.now() + 1800000 }
+      });
+    }
+
+    if (type === 'GET_WEEKLY_STATS') {
+      // Aggregate week data for goals
+      const weeklyCategories = {};
+      mockData.weekData.forEach(day => {
+        Object.entries(day.categories || {}).forEach(([cat, data]) => {
+          if (!weeklyCategories[cat]) weeklyCategories[cat] = { time: 0 };
+          weeklyCategories[cat].time += data.time;
+        });
+      });
+      return Promise.resolve({
+        success: true,
+        data: { weeklyCategories, totalTime: mockData.weekData.reduce((s, d) => s + d.totalTime, 0) }
+      });
+    }
+
+    if (type === 'GET_LIMITS' || type === 'GET_DOMAIN_CATEGORY') {
+      return originalSendMessage(message, ...args);
+    }
+
+    // Default: pass through
+    return originalSendMessage(message, ...args);
+  };
+
+  // Inject mock goals into global goals array
+  goals = mockData.mockGoals;
+
+  // Override productive color to match CSS prod-dot (#007AFF blue)
+  PRODUCTIVITY_GROUPS.productive.color = '#007AFF';
+  document.documentElement.style.setProperty('--productive-color', '#007AFF');
+
+  document.body.classList.add('mockup-data-active');
+
+  // Show mockup-only elements (goals sections)
+  document.querySelectorAll('.mockup-only').forEach(el => el.classList.remove('hidden'));
+
+  console.log('[Mockup] Mock data enabled');
+}
+
+/**
+ * Apply mock layout inline styles (must be called after DOM rebuild)
+ */
+function applyMockLayout() {
+  document.querySelectorAll('.category-cell').forEach(el => {
+    el.style.cssText = 'display:flex !important; flex-direction:row !important; flex-wrap:nowrap !important; gap:18px; align-items:stretch; overflow:visible; margin-left:16px;';
+  });
+  document.querySelectorAll('.productivity-section').forEach(el => {
+    el.style.cssText = 'flex:0 0 140px !important; max-width:140px; min-width:140px; margin:0;';
+  });
+  document.querySelectorAll('.categories-section').forEach(el => {
+    el.style.cssText = 'flex:1 1 0% !important; min-width:0; overflow:visible; border-top:none; border-left:1px solid var(--border); padding-left:12px; padding-top:10px; margin-top:0;';
+  });
+}
+
+/**
+ * AI Insights — mockup only
+ * 3 charts: (1) 4주 시간대별 집중력 곡선, (2) 사용 전후 비교, (3) 이탈 경로 분석
+ */
+
+let _aiInsightsData = null;
+
+function computeAIInsightsData() {
+  const stats = _mockTodayStats;
+  const weekData = _mockWeekData;
+  if (!stats || !weekData) return null;
+
+  const sessions = _mockSessions || [];
+  const categories = stats.categories || {};
+  const totalTime = stats.totalTime || 0;
+  const productiveCats = ['workspace', 'education'];
+  const unproductiveCats = ['social', 'entertainment', 'games'];
+
+  // --- Today metrics ---
+  let productiveTime = 0, unproductiveTime = 0;
+  for (const [cat, d] of Object.entries(categories)) {
+    if (productiveCats.includes(cat)) productiveTime += d.time;
+    else if (unproductiveCats.includes(cat)) unproductiveTime += d.time;
+  }
+  const prodRatio = totalTime > 0 ? productiveTime / totalTime : 0;
+
+  // Hourly focus (today, 6AM-1AM = 20 slots)
+  const hourlyProd = {};
+  for (let h = 6; h <= 25; h++) hourlyProd[h] = { productive: 0, total: 0 };
+  for (const s of sessions) {
+    const hour = new Date(s.startTime).getHours();
+    const key = hour < 6 ? hour + 24 : hour; // 0-5 AM → 24-29
+    if (key < 6 || key > 25) continue;
+    hourlyProd[key].total += s.duration;
+    if (productiveCats.includes(s.category)) hourlyProd[key].productive += s.duration;
+  }
+
+  // Longest productive streak
+  const prodSessions = sessions.filter(s => productiveCats.includes(s.category));
+  let deepWork = 0, streak = 0;
+  for (let i = 0; i < prodSessions.length; i++) {
+    if (i > 0 && (prodSessions[i].startTime - prodSessions[i-1].endTime) < 600000) {
+      streak += prodSessions[i].duration;
+    } else { streak = prodSessions[i].duration; }
+    deepWork = Math.max(deepWork, streak);
+  }
+
+  // Longest distraction streak
+  const unprodSessions = sessions.filter(s => unproductiveCats.includes(s.category));
+  let longestDistraction = 0, dStreak = 0;
+  for (let i = 0; i < unprodSessions.length; i++) {
+    if (i > 0 && (unprodSessions[i].startTime - unprodSessions[i-1].endTime) < 600000) {
+      dStreak += unprodSessions[i].duration;
+    } else { dStreak = unprodSessions[i].duration; }
+    longestDistraction = Math.max(longestDistraction, dStreak);
+  }
+
+  // Context switches
+  let switches = 0;
+  for (let i = 1; i < sessions.length; i++) {
+    if (sessions[i].category !== sessions[i-1].category) switches++;
+  }
+
+  // --- Chart 1: 4주 평균 시간대별 집중력 (6AM-1AM, 20 slots) ---
+  // Realistic pattern: morning ramp → peak 10-12 → post-lunch dip → afternoon → evening decline → 11PM+ cliff
+  const avg4wFocus = [
+    // 6AM  7AM  8AM  9AM  10AM 11AM 12PM 1PM  2PM  3PM  4PM  5PM  6PM  7PM  8PM  9PM  10PM 11PM 12AM 1AM
+       12,  25,  48,  68,   85,  88,  72,  45,  52,  65,  70,  58,  42,  35,  28,  22,  18,  10,   5,   3
+  ];
+  // Today's actual hourly focus (same 20 slots)
+  const todayFocus = [];
+  for (let h = 6; h <= 25; h++) {
+    const slot = hourlyProd[h];
+    todayFocus.push(slot.total > 0 ? Math.round((slot.productive / slot.total) * 100) : 0);
+  }
+  const focusHours = [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]; // 24=12AM, 25=1AM
+
+  // --- Chart 2: 사용 전후 비교 (Before/After deTime) ---
+  // "Before" = synthetic worse data (user before installing)
+  // "After" = current 4-week average (improvement after using deTime)
+  const beforeAfter = {
+    prodHours:     { before: 2.1,  after: 4.3,  label: '일일 집중 시간',       unit: '시간' },
+    distractMin:   { before: 145,  after: 62,   label: '일일 이탈 시간',       unit: '분' },
+    switches:      { before: 18,   after: 9,    label: '일일 작업 전환',       unit: '회' },
+  };
+
+  // --- Chart 3: 이탈 경로 분석 ---
+  // Analyze session transitions: productive → which unproductive site/category
+  const distractionPaths = [];
+  for (let i = 1; i < sessions.length; i++) {
+    const prev = sessions[i - 1];
+    const curr = sessions[i];
+    if (productiveCats.includes(prev.category) && unproductiveCats.includes(curr.category)) {
+      // Track the full distraction chain
+      const chain = [{ domain: prev.visits?.[0]?.domain || prev.category, cat: prev.category }];
+      for (let j = i; j < sessions.length && !productiveCats.includes(sessions[j].category); j++) {
+        chain.push({
+          domain: sessions[j].visits?.[0]?.domain || sessions[j].category,
+          cat: sessions[j].category,
+          duration: sessions[j].duration
+        });
+      }
+      if (chain.length >= 2) {
+        distractionPaths.push(chain);
+      }
+    }
+  }
+  // Find most common entry point and total time per distraction domain
+  const distractByDomain = {};
+  for (const path of distractionPaths) {
+    for (let k = 1; k < path.length; k++) {
+      const d = path[k].domain;
+      if (!distractByDomain[d]) distractByDomain[d] = { count: 0, totalMs: 0, isEntry: 0 };
+      distractByDomain[d].count++;
+      distractByDomain[d].totalMs += path[k].duration || 0;
+      if (k === 1) distractByDomain[d].isEntry++;
+    }
+  }
+  // Sort by total time
+  const topDistractors = Object.entries(distractByDomain)
+    .sort((a, b) => b[1].totalMs - a[1].totalMs)
+    .slice(0, 5)
+    .map(([domain, info]) => ({ domain, ...info }));
+
+  // Average total distraction chain time
+  const avgChainTime = distractionPaths.length > 0
+    ? distractionPaths.reduce((s, p) => s + p.slice(1).reduce((t, n) => t + (n.duration || 0), 0), 0) / distractionPaths.length
+    : 0;
+
+  // Top entry distractor
+  const topEntry = topDistractors.reduce((a, b) => b.isEntry > a.isEntry ? b : a, topDistractors[0] || { domain: '-', isEntry: 0 });
+  const entryPct = distractionPaths.length > 0 ? Math.round((topEntry.isEntry / distractionPaths.length) * 100) : 0;
+
+  // Focus score
+  const avgSessionLen = sessions.length > 0 ? totalTime / sessions.length : 0;
+  const focusScore = Math.round(prodRatio * 60 + Math.min(avgSessionLen / 3600000, 1) * 25 + 15);
+
+  return {
+    // Chart 1
+    avg4wFocus, todayFocus, focusHours, hourlyProd,
+    // Chart 2
+    beforeAfter,
+    // Chart 3
+    distractionPaths, topDistractors, avgChainTime, topEntry, entryPct,
+    // Metrics
+    productiveTime, unproductiveTime, totalTime, prodRatio,
+    deepWork, longestDistraction, switches, focusScore,
+  };
+}
+
+function drawAIInsightsCharts() {
+  _aiInsightsData = computeAIInsightsData();
+  if (!_aiInsightsData) return;
+  populateAIComments();
+  drawFocusTimelineChart();
+  drawBeforeAfterChart();
+  drawDistractionFlowChart();
+  populateAIMetrics();
+  populateCategoryBreakdown();
+}
+
+// Helper: setup AI canvas with proper DPR scaling
+function setupAICanvas(canvas, height) {
+  const dpr = window.devicePixelRatio || 1;
+  // Measure from the CARD's actual rendered width (most reliable)
+  const card = canvas.closest('.ai-chart-card');
+  const cardRect = card.getBoundingClientRect();
+  const cardStyle = getComputedStyle(card);
+  const padL = parseFloat(cardStyle.paddingLeft) || 0;
+  const padR = parseFloat(cardStyle.paddingRight) || 0;
+  const w = Math.floor(cardRect.width - padL - padR) || 300;
+  const h = height;
+  // Set pixel buffer
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  // Lock display size to exact measured width
+  canvas.style.cssText = `display:block; width:${w}px; height:${h}px;`;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, w, h };
+}
+
+// ─── AI Comments ─────────────────────────────────────────────
+function populateAIComments() {
+  const d = _aiInsightsData;
+  const fmtMs = (ms) => {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.round((ms % 3600000) / 60000);
+    return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+  };
+
+  // Chart 1: 시간대별 집중력 — 11시 이후 급락 패턴 강조
+  const focusEl = document.getElementById('aiFocusComment');
+  if (focusEl) {
+    // Find when focus drops below 20% (evening cliff)
+    const avg = d.avg4wFocus;
+    let cliffHour = 23;
+    for (let i = avg.length - 1; i >= 0; i--) {
+      if (avg[i] >= 20) { cliffHour = d.focusHours[i]; break; }
+    }
+    const peakIdx = avg.indexOf(Math.max(...avg));
+    const peakHour = d.focusHours[peakIdx];
+    const peakAmpm = peakHour >= 12 ? '오후' : '오전';
+    const peakHrStr = peakHour > 12 ? peakHour - 12 : peakHour;
+    const cliffStr = cliffHour > 12 ? `오후 ${cliffHour - 12}시` : `오전 ${cliffHour}시`;
+    const dropPct = avg[peakIdx] > 0 ? Math.round((1 - avg[avg.length - 3] / avg[peakIdx]) * 100) : 0;
+
+    focusEl.innerHTML = `<span class="ai-label">AI</span>골든타임은 <span class="ai-highlight">${peakAmpm} ${peakHrStr}시</span>(${avg[peakIdx]}%). <span class="ai-highlight">${cliffStr} 이후 ${dropPct}% 급락</span> — 11시 이후 화면 차단 추천.`;
+  }
+
+  // Chart 2: 사용 전후 비교
+  const hourlyEl = document.getElementById('aiHourlyComment');
+  if (hourlyEl) {
+    const ba = d.beforeAfter;
+    const prodImprove = Math.round(((ba.prodHours.after - ba.prodHours.before) / ba.prodHours.before) * 100);
+    const distractReduce = Math.round(((ba.distractMin.before - ba.distractMin.after) / ba.distractMin.before) * 100);
+    const switchReduce = Math.round(((ba.switches.before - ba.switches.after) / ba.switches.before) * 100);
+
+    hourlyEl.innerHTML = `<span class="ai-label">AI</span>4주 후 집중 <span class="ai-highlight">+${prodImprove}%</span>, 이탈 <span class="ai-highlight">-${distractReduce}%</span>, 전환 <span class="ai-highlight">-${switchReduce}%</span>. 패턴 인식만으로 행동이 변해요.`;
+  }
+
+  // Chart 3: 이탈 경로
+  const weeklyEl = document.getElementById('aiWeeklyComment');
+  if (weeklyEl) {
+    const topD = d.topEntry?.domain || 'youtube.com';
+    const pct = d.entryPct || 67;
+    const chainMin = Math.round(d.avgChainTime / 60000);
+    const paths = d.distractionPaths?.length || 0;
+
+    // Build most common path description
+    let pathDesc = '';
+    if (d.distractionPaths && d.distractionPaths.length > 0) {
+      const longest = d.distractionPaths.reduce((a, b) => b.length > a.length ? b : a, d.distractionPaths[0]);
+      pathDesc = longest.map(n => n.domain).join(' → ');
+    }
+
+    weeklyEl.innerHTML = `<span class="ai-label">AI</span>이탈 <span class="ai-highlight">${pct}%</span>가 <span class="ai-highlight">${topD}</span>에서 시작. 평균 복귀 <span class="ai-highlight">${chainMin}분</span> — ${topD} 시간제한 추천.`;
+  }
+}
+
+// ─── Chart 1: 4주 평균 시간대별 집중력 곡선 (6AM-1AM) ─────────────
+// ─── Chart 1: 시간대별 집중력 (6AM-1AM) ───────────────────────────
+function drawFocusTimelineChart() {
+  const canvas = document.getElementById('aiFocusChart');
+  if (!canvas) return;
+  const d = _aiInsightsData;
+  const { ctx, w, h } = setupAICanvas(canvas, 110);
+
+  const avg = d.avg4wFocus;
+  const today = d.todayFocus;
+  const hours = d.focusHours;
+  const n = avg.length;
+
+  const padL = 36, padR = 12, padT = 18, padB = 22;
+  const chartW = w - padL - padR, chartH = h - padT - padB;
+  const cs = getComputedStyle(document.documentElement);
+  const textColor = cs.getPropertyValue('--text-tertiary').trim() || '#999';
+  const textMain = cs.getPropertyValue('--text-secondary').trim() || '#666';
+  const gridColor = cs.getPropertyValue('--border-light').trim() || '#eee';
+
+  const xScale = (i) => padL + (i / (n - 1)) * chartW;
+  const yScale = (v) => padT + (1 - v / 100) * chartH;
+
+  // Grid
+  ctx.strokeStyle = gridColor; ctx.lineWidth = 0.5;
+  [25, 50, 75].forEach(v => { ctx.beginPath(); ctx.moveTo(padL, yScale(v)); ctx.lineTo(w - padR, yScale(v)); ctx.stroke(); });
+
+  // Y labels
+  ctx.fillStyle = textColor; ctx.font = '9px -apple-system, sans-serif'; ctx.textAlign = 'right';
+  [0, 50, 100].forEach(v => ctx.fillText(v + '%', padL - 5, yScale(v) + 3));
+
+  // X labels — Korean style
+  ctx.textAlign = 'center'; ctx.font = '9px -apple-system, sans-serif';
+  const xLabels = [
+    { hr: 6, lbl: '6시' }, { hr: 9, lbl: '9시' }, { hr: 12, lbl: '12시' },
+    { hr: 15, lbl: '15시' }, { hr: 18, lbl: '18시' }, { hr: 21, lbl: '21시' }, { hr: 24, lbl: '0시' }
+  ];
+  xLabels.forEach(({ hr, lbl }) => {
+    const idx = hours.indexOf(hr);
+    if (idx < 0) return;
+    ctx.fillStyle = hr >= 23 ? '#FF3B30' : textColor;
+    ctx.fillText(lbl, xScale(idx), h - 6);
+  });
+
+  // 11PM+ danger zone
+  const zoneIdx = hours.indexOf(23);
+  if (zoneIdx >= 0) {
+    const grad = ctx.createLinearGradient(0, padT, 0, padT + chartH);
+    grad.addColorStop(0, 'rgba(255, 59, 48, 0.10)');
+    grad.addColorStop(1, 'rgba(255, 59, 48, 0.02)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(xScale(zoneIdx), padT, xScale(n - 1) - xScale(zoneIdx), chartH);
+    ctx.fillStyle = '#FF3B30';
+    ctx.globalAlpha = 0.6;
+    ctx.font = 'bold 9px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('집중력 급락', (xScale(zoneIdx) + xScale(n - 1)) / 2, padT + 12);
+    ctx.globalAlpha = 1;
+  }
+
+  // Bezier helper
+  function drawCurve(data, color, lw, dash, areaColor) {
+    ctx.setLineDash(dash || []);
+    if (areaColor) {
+      const ag = ctx.createLinearGradient(0, padT, 0, padT + chartH);
+      ag.addColorStop(0, areaColor);
+      ag.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.beginPath(); ctx.moveTo(xScale(0), yScale(data[0]));
+      for (let i = 1; i < data.length; i++) {
+        const x0 = xScale(i-1), y0 = yScale(data[i-1]), x1 = xScale(i), y1 = yScale(data[i]);
+        ctx.bezierCurveTo((x0+x1)/2, y0, (x0+x1)/2, y1, x1, y1);
+      }
+      ctx.lineTo(xScale(data.length-1), padT+chartH); ctx.lineTo(xScale(0), padT+chartH);
+      ctx.closePath(); ctx.fillStyle = ag; ctx.fill();
+    }
+    ctx.beginPath(); ctx.moveTo(xScale(0), yScale(data[0]));
+    for (let i = 1; i < data.length; i++) {
+      const x0 = xScale(i-1), y0 = yScale(data[i-1]), x1 = xScale(i), y1 = yScale(data[i]);
+      ctx.bezierCurveTo((x0+x1)/2, y0, (x0+x1)/2, y1, x1, y1);
+    }
+    ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // 4주 평균 (solid, area fill)
+  drawCurve(avg, '#007AFF', 2.5, null, 'rgba(0,122,255,0.10)');
+
+  // 오늘 (dashed orange)
+  const hasToday = today.some(v => v > 0);
+  if (hasToday) drawCurve(today, '#FF9500', 1.8, [5, 3], null);
+
+  // Peak marker + label
+  const peakIdx = avg.indexOf(Math.max(...avg));
+  ctx.beginPath(); ctx.arc(xScale(peakIdx), yScale(avg[peakIdx]), 4, 0, Math.PI*2);
+  ctx.fillStyle = '#34C759'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  // Peak label: position above if room, below if too close to top
+  const peakY = yScale(avg[peakIdx]);
+  const peakLabelY = peakY - 7 < padT ? peakY + 14 : peakY - 7;
+  ctx.fillStyle = '#34C759'; ctx.font = 'bold 9px -apple-system, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`${avg[peakIdx]}%`, xScale(peakIdx), peakLabelY);
+
+  // Drop marker + label
+  if (zoneIdx >= 0) {
+    ctx.beginPath(); ctx.arc(xScale(zoneIdx), yScale(avg[zoneIdx]), 4, 0, Math.PI*2);
+    ctx.fillStyle = '#FF3B30'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    const dropY = yScale(avg[zoneIdx]);
+    const dropLabelY = dropY + 14 > padT + chartH ? dropY - 7 : dropY + 14;
+    ctx.fillStyle = '#FF3B30'; ctx.font = 'bold 9px -apple-system, sans-serif';
+    ctx.fillText(`${avg[zoneIdx]}%`, xScale(zoneIdx), dropLabelY);
+  }
+
+  // Legend (top-right)
+  const lx = w - padR - 115;
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(lx, 8); ctx.lineTo(lx+16, 8); ctx.strokeStyle = '#007AFF'; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.fillStyle = textMain; ctx.font = '9px -apple-system, sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('4주 평균', lx+19, 11);
+  if (hasToday) {
+    ctx.beginPath(); ctx.moveTo(lx+62, 8); ctx.lineTo(lx+78, 8); ctx.strokeStyle = '#FF9500'; ctx.setLineDash([4,3]); ctx.lineWidth = 1.8; ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillText('오늘', lx+81, 11);
+  }
+}
+
+// ─── Chart 2: deTime 사용 전후 비교 ──────────────────────────────
+function drawBeforeAfterChart() {
+  const canvas = document.getElementById('aiHourlyChart');
+  if (!canvas) return;
+  const d = _aiInsightsData;
+  const { ctx, w, h } = setupAICanvas(canvas, 140);
+
+  const ba = d.beforeAfter;
+  const items = Object.values(ba);
+  const n = items.length;
+  const padL = 8, padR = 8, padT = 18, padB = 8;
+  const usableH = h - padT - padB;
+  const rowH = usableH / n;          // ~38.5px per row
+  const cs = getComputedStyle(document.documentElement);
+  const textColor = cs.getPropertyValue('--text-tertiary').trim() || '#999';
+  const textMain = cs.getPropertyValue('--text').trim() || '#333';
+
+  // Layout: [label] then bars below label (stacked vertically, not side-by-side)
+  const badgeW = 52;
+  const badgeGap = 8;  // gap between value text and badge
+  const barMaxW = w - padL - padR - badgeW - badgeGap - 50;  // reserve space for value text + badge
+
+  // Legend row
+  ctx.font = '9px -apple-system, sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(180,180,180,0.6)'; ctx.fillRect(padL, 4, 10, 5);
+  ctx.fillStyle = textColor; ctx.fillText('사용 전', padL + 13, 9);
+  ctx.fillStyle = '#007AFF'; ctx.fillRect(padL + 48, 4, 10, 5);
+  ctx.fillStyle = textColor; ctx.fillText('사용 4주 후', padL + 61, 9);
+
+  const badgeX = w - padR - badgeW;
+
+  items.forEach((item, i) => {
+    const y = padT + i * rowH;
+    const barH = 7;
+    const globalMax = Math.max(item.before, item.after, 1);
+    const bw = Math.max(4, (item.before / globalMax) * barMaxW);
+    const aw = Math.max(4, (item.after / globalMax) * barMaxW);
+    const r = barH / 2;
+    const isReduction = item.label.includes('이탈') || item.label.includes('전환');
+
+    // Row label (above bars)
+    ctx.fillStyle = textMain; ctx.font = '10px -apple-system, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(item.label, padL, y + 9);
+
+    // Before bar
+    const by = y + 13;
+    ctx.fillStyle = 'rgba(180, 180, 180, 0.3)';
+    ctx.beginPath(); ctx.roundRect(padL, by, bw, barH, r); ctx.fill();
+    ctx.fillStyle = textColor; ctx.font = '8px -apple-system, sans-serif';
+    const beforeText = `${item.before}${item.unit}`;
+    const beforeTextX = padL + bw + 4;
+    // Only draw if it won't overlap the badge
+    if (beforeTextX + ctx.measureText(beforeText).width < badgeX - 4) {
+      ctx.fillText(beforeText, beforeTextX, by + barH - 1);
+    }
+
+    // After bar
+    const ay = by + barH + 2;
+    const afterColor = isReduction
+      ? (item.after < item.before ? '#34C759' : '#FF6B6B')
+      : '#007AFF';
+    ctx.fillStyle = afterColor; ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.roundRect(padL, ay, aw, barH, r); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = textMain; ctx.font = 'bold 8px -apple-system, sans-serif';
+    const afterText = `${item.after}${item.unit}`;
+    const afterTextX = padL + aw + 4;
+    // Only draw if it won't overlap the badge
+    if (afterTextX + ctx.measureText(afterText).width < badgeX - 4) {
+      ctx.fillText(afterText, afterTextX, ay + barH - 1);
+    }
+
+    // Change badge (right side, vertically centered)
+    const change = isReduction
+      ? Math.round(((item.before - item.after) / item.before) * 100)
+      : Math.round(((item.after - item.before) / item.before) * 100);
+    const arrow = isReduction ? '↓' : '↑';
+    const badgeColor = isReduction ? '#34C759' : '#007AFF';
+    const badgeCY = by + barH; // center between the two bars
+    ctx.fillStyle = badgeColor; ctx.globalAlpha = 0.12;
+    ctx.beginPath(); ctx.roundRect(badgeX, badgeCY - 8, badgeW, 16, 8); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = badgeColor; ctx.font = 'bold 10px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${arrow}${change}%`, badgeX + badgeW / 2, badgeCY + 4);
+    ctx.textAlign = 'left'; // reset
+  });
+}
+
+// ─── Chart 3: 이탈 경로 플로우 ────────────────────────────────────
+function drawDistractionFlowChart() {
+  const canvas = document.getElementById('aiWeeklyChart');
+  if (!canvas) return;
+  const d = _aiInsightsData;
+  const { ctx, w, h } = setupAICanvas(canvas, 110);
+
+  const tops = d.topDistractors;
+  if (!tops || tops.length === 0) return;
+
+  const cs = getComputedStyle(document.documentElement);
+  const textColor = cs.getPropertyValue('--text-tertiary').trim() || '#999';
+  const textMain = cs.getPropertyValue('--text').trim() || '#333';
+
+  const padL = 10, padR = 10, padT = 6, padB = 16;
+  const usableW = w - padL - padR;
+  const totalMs = tops.reduce((s, t) => s + t.totalMs, 0);
+  const colors = ['#FF6B6B', '#FF9500', '#FFCC00', '#AF52DE', '#FF2D55'];
+
+  // --- Row 1: Flow path (arrows) ---
+  const flowY = padT;
+  const flowH = 20;
+  if (d.distractionPaths && d.distractionPaths.length > 0) {
+    const longest = d.distractionPaths.reduce((a, b) => b.length > a.length ? b : a, d.distractionPaths[0]);
+    // Limit to max 5 nodes to fit
+    const pathDomains = longest.slice(0, 5).map(n => n.domain.replace('www.', ''));
+    const nodeCount = pathDomains.length;
+    const nodeW = Math.min(60, (usableW - (nodeCount - 1) * 16) / nodeCount);
+    const totalNodesW = nodeW * nodeCount;
+    const arrowW = (usableW - totalNodesW) / Math.max(1, nodeCount - 1);
+
+    let nx = padL;
+    pathDomains.forEach((domain, i) => {
+      const isFirst = i === 0;
+      const cx = nx + nodeW / 2;
+
+      // Node pill
+      ctx.fillStyle = isFirst ? 'rgba(0,122,255,0.1)' : `${colors[(i-1) % colors.length]}20`;
+      ctx.beginPath(); ctx.roundRect(nx, flowY, nodeW, flowH, flowH / 2); ctx.fill();
+
+      // Node text
+      ctx.fillStyle = isFirst ? '#007AFF' : colors[(i-1) % colors.length];
+      ctx.font = isFirst ? 'bold 9px -apple-system, sans-serif' : '9px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      // Truncate domain to fit nodeW
+      let txt = domain;
+      if (ctx.measureText(txt).width > nodeW - 8) txt = domain.split('.')[0];
+      ctx.fillText(txt, cx, flowY + 13);
+
+      // Arrow to next
+      if (i < nodeCount - 1) {
+        const aStart = nx + nodeW + 2;
+        const aEnd = nx + nodeW + arrowW - 2;
+        const ay = flowY + flowH / 2;
+        if (aEnd > aStart + 6) {
+          ctx.strokeStyle = textColor; ctx.lineWidth = 1; ctx.globalAlpha = 0.4;
+          ctx.beginPath(); ctx.moveTo(aStart, ay); ctx.lineTo(aEnd - 4, ay); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(aEnd, ay); ctx.lineTo(aEnd - 5, ay - 3); ctx.lineTo(aEnd - 5, ay + 3);
+          ctx.closePath(); ctx.fillStyle = textColor; ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      nx += nodeW + arrowW;
+    });
+  }
+
+  // --- Row 2: Proportional blocks ---
+  const blockY = flowY + flowH + 8;
+  const blockH = h - blockY - padB;
+  const gap = 3;
+  const totalGap = gap * Math.max(0, tops.length - 1);
+  const barAreaW = usableW - totalGap;
+
+  // Normalize widths so they sum exactly to barAreaW (no overflow)
+  const rawWidths = tops.map(t => t.totalMs / totalMs * barAreaW);
+  // Enforce minimum 24px, then scale the rest proportionally
+  const minW = 24;
+  let overflow = 0;
+  const widths = rawWidths.map(rw => {
+    if (rw < minW) { overflow += minW - rw; return minW; }
+    return rw;
+  });
+  // Distribute overflow reduction to large items
+  if (overflow > 0) {
+    const largeItems = widths.filter(ww => ww > minW);
+    const largeSum = largeItems.reduce((s, ww) => s + ww, 0);
+    for (let i = 0; i < widths.length; i++) {
+      if (widths[i] > minW) widths[i] -= (widths[i] / largeSum) * overflow;
+    }
+  }
+
+  let x = padL;
+  tops.forEach((t, i) => {
+    const segW = widths[i];
+    const color = colors[i % colors.length];
+    const r = 4;
+    const minMs = Math.round(t.totalMs / 60000);
+    const label = t.domain.replace('www.', '');
+    const cx = x + segW / 2;
+
+    // Block background
+    ctx.fillStyle = color; ctx.globalAlpha = 0.12;
+    ctx.beginPath(); ctx.roundRect(x, blockY, segW, blockH, r); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Left accent bar
+    ctx.fillStyle = color;
+    ctx.fillRect(x, blockY + 3, 3, blockH - 6);
+
+    // Domain name + time
+    ctx.textAlign = 'center';
+    if (segW > 50) {
+      ctx.fillStyle = textMain; ctx.font = 'bold 10px -apple-system, sans-serif';
+      ctx.fillText(label, cx, blockY + blockH / 2 - 4);
+      ctx.fillStyle = color; ctx.font = 'bold 11px -apple-system, sans-serif';
+      ctx.fillText(`${minMs}분`, cx, blockY + blockH / 2 + 10);
+    } else if (segW > 32) {
+      ctx.fillStyle = textMain; ctx.font = '8px -apple-system, sans-serif';
+      ctx.fillText(label.split('.')[0], cx, blockY + blockH / 2 - 2);
+      ctx.fillStyle = color; ctx.font = 'bold 9px -apple-system, sans-serif';
+      ctx.fillText(`${minMs}분`, cx, blockY + blockH / 2 + 10);
+    } else {
+      ctx.fillStyle = color; ctx.font = 'bold 9px -apple-system, sans-serif';
+      ctx.fillText(`${minMs}`, cx, blockY + blockH / 2 + 4);
+    }
+
+    x += segW + gap;
+  });
+
+  // Bottom summary
+  const chainMin = Math.round(d.avgChainTime / 60000);
+  ctx.fillStyle = textColor; ctx.font = '9px -apple-system, sans-serif'; ctx.textAlign = 'right';
+  ctx.fillText(`한번 이탈 시 평균 복귀까지 ${chainMin}분`, w - padR, h - 3);
+}
+
+// ─── Metrics Grid ───────────────────────────────────────────────
+function populateAIMetrics() {
+  const d = _aiInsightsData;
+  if (!d) return;
+
+  const grid = document.getElementById('aiMetricsGrid');
+  if (!grid) return;
+
+  const fmtMs = (ms) => {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.round((ms % 3600000) / 60000);
+    return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+  };
+
+  const ba = d.beforeAfter;
+  const prodImprove = Math.round(((ba.prodHours.after - ba.prodHours.before) / ba.prodHours.before) * 100);
+  const distractReduce = Math.round(((ba.distractMin.before - ba.distractMin.after) / ba.distractMin.before) * 100);
+  const topD = d.topEntry?.domain?.replace('www.', '') || '-';
+  const weekSaved = Math.round((ba.distractMin.before - ba.distractMin.after) * 7 / 60 * 10) / 10; // hours/week saved
+
+  grid.innerHTML = `
+    <div class="ai-metric-card">
+      <div class="ai-metric-label">deTime 효과</div>
+      <div class="ai-metric-value">+${prodImprove}%</div>
+      <span class="ai-metric-rank ai-rank-good">집중 시간 증가</span>
+    </div>
+    <div class="ai-metric-card">
+      <div class="ai-metric-label">주간 절약</div>
+      <div class="ai-metric-value">${weekSaved}시간</div>
+      <span class="ai-metric-rank ai-rank-good">이탈 ${distractReduce}% 감소</span>
+    </div>
+    <div class="ai-metric-card">
+      <div class="ai-metric-label">이탈 주범</div>
+      <div class="ai-metric-value" style="font-size:14px">${topD}</div>
+      <span class="ai-metric-rank ai-rank-bad">진입 ${d.entryPct}%</span>
+    </div>
+    <div class="ai-metric-card">
+      <div class="ai-metric-label">집중 점수</div>
+      <div class="ai-metric-value">${d.focusScore}<span style="font-size:0.55em;opacity:0.5">/100</span></div>
+      <span class="ai-metric-rank ${d.focusScore >= 60 ? 'ai-rank-good' : 'ai-rank-bad'}">${d.focusScore >= 70 ? '우수' : d.focusScore >= 50 ? '보통' : '개선 필요'}</span>
+    </div>
+  `;
+}
+
+// ─── Category Breakdown Card ──────────────────────────────────
+function populateCategoryBreakdown() {
+  const container = document.getElementById('categoryBreakdownContent');
+  if (!container) return;
+
+  const stats = _mockTodayStats;
+  if (!stats || !stats.categories) return;
+
+  const catMeta = {
+    productivity: { name: 'Productivity',  color: '#74B9FF', icon: '💼' },
+    social:       { name: 'Social Media',  color: '#FFEAA7', icon: '📱' },
+    entertainment:{ name: 'Entertainment', color: '#81ECEC', icon: '🎬' },
+    education:    { name: 'Learning',      color: '#A3D8F4', icon: '📚' },
+    shopping:     { name: 'Shopping',      color: '#A29BFE', icon: '🛒' },
+    news:         { name: 'News',          color: '#FDCB6E', icon: '📰' },
+    games:        { name: 'Games',         color: '#FAB1A0', icon: '🎮' },
+    music:        { name: 'Music',         color: '#DDA0DD', icon: '🎵' },
+    other:        { name: 'Other',         color: '#DFE6E9', icon: '➕' },
+  };
+
+  // Mock domain data per category
+  // Realistic daily usage (total ~5.5h screen time)
+  const mockDomains = {
+    productivity: [
+      { domain: 'notion.so', time: 3720000 },      // 62m
+      { domain: 'github.com', time: 2580000 },      // 43m
+      { domain: 'docs.google.com', time: 1140000 }, // 19m
+      { domain: 'figma.com', time: 840000 },         // 14m
+    ],
+    entertainment: [
+      { domain: 'youtube.com', time: 2820000 },     // 47m
+      { domain: 'netflix.com', time: 1080000 },     // 18m
+    ],
+    social: [
+      { domain: 'instagram.com', time: 1380000 },   // 23m
+      { domain: 'twitter.com', time: 720000 },      // 12m
+      { domain: 'reddit.com', time: 480000 },       // 8m
+    ],
+    education: [
+      { domain: 'stackoverflow.com', time: 960000 },// 16m
+      { domain: 'medium.com', time: 540000 },       // 9m
+    ],
+    news: [
+      { domain: 'news.ycombinator.com', time: 780000 }, // 13m
+    ],
+    shopping: [
+      { domain: 'coupang.com', time: 420000 },      // 7m
+    ],
+    other: [
+      { domain: 'google.com', time: 660000 },       // 11m
+      { domain: 'translate.google.com', time: 180000 }, // 3m
+    ],
+  };
+
+  const fmtTime = (ms) => {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.round((ms % 3600000) / 60000);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  // Sort categories by time
+  const sorted = Object.entries(stats.categories)
+    .map(([key, val]) => ({ key, time: val.time || 0 }))
+    .filter(c => c.time > 0)
+    .sort((a, b) => b.time - a.time);
+
+  const totalTime = sorted.reduce((s, c) => s + c.time, 0);
+  const maxTime = sorted[0]?.time || 1;
+
+  let html = '';
+  sorted.forEach(cat => {
+    const meta = catMeta[cat.key] || catMeta.other;
+    const pct = Math.round((cat.time / totalTime) * 100);
+    const barPct = Math.round((cat.time / maxTime) * 100);
+    const domains = mockDomains[cat.key] || [];
+
+    let domainsHtml = '';
+    domains.forEach(d => {
+      const domPct = Math.round((d.time / cat.time) * 100);
+      domainsHtml += `
+        <div class="cb-domain">
+          <img class="cb-domain-icon" src="https://www.google.com/s2/favicons?domain=${d.domain}&sz=32" alt="" onerror="this.style.display='none'">
+          <span class="cb-domain-name">${d.domain}</span>
+          <span class="cb-domain-time">${fmtTime(d.time)}</span>
+          <span class="cb-domain-pct">${domPct}%</span>
+        </div>`;
+    });
+
+    html += `
+      <div class="cb-category">
+        <div class="cb-cat-header">
+          <span class="cb-cat-icon">${meta.icon}</span>
+          <span class="cb-cat-name">${meta.name}</span>
+          <span class="cb-cat-time">${fmtTime(cat.time)}</span>
+          <span class="cb-cat-pct">${pct}%</span>
+        </div>
+        <div class="cb-cat-bar-track">
+          <div class="cb-cat-bar" style="width:${barPct}%; background:${meta.color};"></div>
+        </div>
+        <div class="cb-domains">${domainsHtml}</div>
+      </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+/**
+ * Restore real chrome.runtime.sendMessage
+ */
+function disableMockData() {
+  if (!mockupModeActive) return;
+  mockupModeActive = false;
+  _mockTodayStats = null;
+  _mockWeekData = null;
+  _mockSessions = null;
+
+  if (originalSendMessage) {
+    chrome.runtime.sendMessage = originalSendMessage;
+    originalSendMessage = null;
+  }
+
+  // Restore real goals
+  loadGoalsData();
+
+  // Restore original productive color
+  PRODUCTIVITY_GROUPS.productive.color = '#007AFF';
+  document.documentElement.style.removeProperty('--productive-color');
+
+  document.body.classList.remove('mockup-data-active');
+
+  // Hide mockup-only elements
+  document.querySelectorAll('.mockup-only').forEach(el => el.classList.add('hidden'));
+
+  console.log('[Mockup] Mock data disabled');
+}
+
+/**
+ * Toggle mobile preview mode
+ */
+// Mobile View: handles visual layout (CSS class toggle + compact layout + canvas redraw)
+function toggleMobileView(enabled) {
+  if (enabled) {
+    document.body.classList.add('mobile-preview-mode');
+    document.body.classList.add('mockup-layout-active');
+    applyMockLayout();
+  } else {
+    document.body.classList.remove('mobile-preview-mode');
+    document.body.classList.remove('mockup-layout-active');
+    // Remove inline layout styles
+    document.querySelectorAll('.category-cell').forEach(el => { el.style.cssText = ''; });
+    document.querySelectorAll('.productivity-section').forEach(el => { el.style.cssText = ''; });
+    document.querySelectorAll('.categories-section').forEach(el => { el.style.cssText = ''; });
+  }
+
+  // Redraw canvases at new size (data stays the same)
+  setTimeout(() => {
+    if (document.body.classList.contains('mockup-data-active')) {
+      requestAnimationFrame(() => requestAnimationFrame(() => drawAIInsightsCharts()));
+    }
+  }, 300);
+}
+
+// Initialize mockup controls
+function initMockupControls() {
+  const mockDataToggle = document.getElementById('mockDataToggle');
+  const mobileViewToggle = document.getElementById('mobileViewToggle');
+
+  // Mock Data toggle: ONLY handles data (mock vs real)
+  if (mockDataToggle) {
+    mockDataToggle.addEventListener('change', async (e) => {
+      if (e.target.checked) {
+        enableMockData();
+      } else {
+        disableMockData();
+      }
+      // Reload current view with mock/real data
+      const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+      if (activeTab) {
+        await loadTabData(activeTab);
+      }
+      // After DOM rebuild, re-apply layout if mobile is on + draw charts
+      if (mockupModeActive) {
+        if (document.body.classList.contains('mockup-layout-active')) {
+          applyMockLayout();
+        }
+        requestAnimationFrame(() => requestAnimationFrame(() => drawAIInsightsCharts()));
+      }
+    });
+  }
+
+  // Mobile View toggle: ONLY handles visual sizing
+  if (mobileViewToggle) {
+    mobileViewToggle.addEventListener('change', (e) => {
+      toggleMobileView(e.target.checked);
+    });
+  }
+}
+
+// Init mockup controls when ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initMockupControls);
+} else {
+  initMockupControls();
+}
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  MOCKUP MODE — END                                         ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  DEBUG LOG DOWNLOAD                                         ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+function debugFmtMs(ms) {
+  if (!ms || ms < 0) return '0s';
+  const sec = Math.floor(ms / 1000);
+  const min = Math.floor(sec / 60);
+  const hr = Math.floor(min / 60);
+  if (hr > 0) return hr + 'h ' + (min % 60) + 'm ' + (sec % 60) + 's';
+  if (min > 0) return min + 'm ' + (sec % 60) + 's';
+  return sec + 's';
+}
+
+async function downloadDebugLog() {
+  const btn = document.getElementById('downloadDebugBtn');
+  if (btn) {
+    btn.textContent = '⏳ Collecting...';
+    btn.disabled = true;
+  }
+
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_DEBUG_DATA' });
+    if (!resp.success) {
+      alert('Error: ' + resp.error);
+      return;
+    }
+
+    const d = resp.data;
+    const lines = [];
+
+    lines.push('========================================');
+    lines.push('  deTime Session Debug Report');
+    lines.push('  Generated: ' + new Date().toISOString());
+    lines.push('========================================');
+    lines.push('');
+
+    // Service Worker
+    const sw = d.serviceWorker || {};
+    lines.push('[Service Worker]');
+    lines.push('  Started at:  ' + (sw.startTime || '?'));
+    lines.push('  Uptime:      ' + (sw.uptimeMin || 0) + ' min');
+    lines.push('');
+
+    // Current state
+    const cs = d.currentState;
+    lines.push('[Current State]');
+    lines.push('  Session active:  ' + cs.hasCurrentSession);
+    lines.push('  Session state:   ' + cs.sessionState);
+    lines.push('  Is user idle:    ' + cs.isUserIdle);
+    lines.push('  Last activity:   ' + (cs.lastActivityTime || 'never'));
+    if (cs.hasCurrentSession) {
+      lines.push('  Session ID:      ' + cs.currentSessionId);
+      lines.push('  Category:        ' + cs.currentSessionCategory);
+      lines.push('  Started at:      ' + cs.currentSessionStartTime);
+      lines.push('  Duration so far: ' + debugFmtMs(cs.currentSessionDuration));
+      lines.push('  Visit count:     ' + cs.currentSessionVisitCount);
+    }
+    lines.push('');
+
+    // DB summary
+    const db = d.db;
+    lines.push('[DB Summary - Today]');
+    lines.push('  Session count:         ' + db.todaySessionCount);
+    lines.push('  Total (from sessions): ' + debugFmtMs(db.todayTotalTimeFromSessions) + ' (' + (db.todayTotalTimeFromSessions / 60000).toFixed(1) + ' min)');
+    lines.push('  Total (dailyStats):    ' + debugFmtMs(db.todayStatsTotal) + ' (' + (db.todayStatsTotal / 60000).toFixed(1) + ' min)');
+    lines.push('');
+
+    // Debug stats
+    const st = d.stats;
+    lines.push('[Debug Stats]');
+    lines.push('  Total events logged: ' + st.totalEvents);
+    lines.push('  Sessions started:    ' + st.sessionStarts);
+    lines.push('  Sessions ended:      ' + st.sessionEnds);
+    lines.push('  Focus lost events:   ' + st.focusLost);
+    lines.push('  Idle API events:     ' + st.idleEvents);
+    lines.push('');
+
+    // End reason breakdown
+    lines.push('[End Reason Breakdown]');
+    const reasons = Object.entries(st.endReasons || {}).sort((a, b) => b[1] - a[1]);
+    if (reasons.length === 0) {
+      lines.push('  (none)');
+    } else {
+      for (const [reason, count] of reasons) {
+        lines.push('  ' + reason.padEnd(35) + ' x' + count);
+      }
+    }
+    lines.push('');
+
+    // All sessions detail
+    lines.push('========================================');
+    lines.push('[Today\'s Sessions - Detail]');
+    lines.push('========================================');
+    const sessions = [...db.sessions].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+    for (const s of sessions) {
+      lines.push('');
+      lines.push('--- Session ' + s.id + ' ---');
+      lines.push('  Category:    ' + s.category + ' (confidence: ' + (s.confidence || '?') + ', method: ' + (s.method || '?') + ')');
+      lines.push('  Start:       ' + s.startTime);
+      lines.push('  End:         ' + (s.endTime || '(active)'));
+      lines.push('  Duration:    ' + debugFmtMs(s.duration || 0) + ' (' + (s.durationMin || 0) + ' min)');
+      lines.push('  Visits:      ' + s.visitCount);
+      lines.push('  Active:      ' + (s.isActive ? 'YES' : 'no'));
+      lines.push('  End reason:  ' + (s.endReason || '-'));
+      lines.push('  Source:      ' + (s.source || 'tracked'));
+      lines.push('  Device:      ' + (s.deviceSource || 'local'));
+      if (s.visits && s.visits.length > 0) {
+        lines.push('  Visit list:');
+        for (const v of s.visits) {
+          lines.push('    [' + v.time + '] ' + (v.category || '') + ' | ' + v.url);
+          if (v.title) lines.push('      title: ' + v.title);
+        }
+      }
+    }
+    lines.push('');
+
+    // Full event log
+    lines.push('========================================');
+    lines.push('[Full Event Log (' + d.debugLog.length + ' entries)]');
+    lines.push('========================================');
+    for (const e of d.debugLog) {
+      const data = Object.entries(e)
+        .filter(([k]) => !['t', 'ts', 'event'].includes(k))
+        .map(([k, v]) => k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v))
+        .join('  ');
+      lines.push(e.t + '  ' + e.event.padEnd(28) + '  ' + data);
+    }
+
+    // Download
+    const text = lines.join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'detime-debug-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    if (btn) {
+      btn.textContent = '✓ Downloaded!';
+      setTimeout(() => {
+        btn.textContent = '🐛 Download Debug Log';
+        btn.disabled = false;
+      }, 2000);
+    }
+
+  } catch (error) {
+    console.error('Error downloading debug log:', error);
+    alert('Failed to download debug log');
+    if (btn) {
+      btn.textContent = '🐛 Download Debug Log';
+      btn.disabled = false;
+    }
+  }
 }

@@ -207,6 +207,15 @@ class CategoryScheduler {
     // Recover retry state after service worker restart
     await this._recoverRetryState();
 
+    // Quick first classification for new installs or stale SW restarts
+    const timeSinceLastRun = settings.categoryScheduler.lastRun
+      ? Date.now() - settings.categoryScheduler.lastRun
+      : Infinity;
+
+    if (timeSinceLastRun > 5 * 60 * 1000) {
+      setTimeout(() => this.processBatch(), 10_000); // 10s delay for other inits to finish
+    }
+
     console.log('[CategoryScheduler] Initialized and alarm set');
   }
 

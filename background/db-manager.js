@@ -1,5 +1,6 @@
 import { DB_CONFIG, DEFAULT_SETTINGS } from '../common/constants.js';
 import { getTodayDate, getDateFromTimestamp, getStartOfDay, getEndOfDay, normalizeDomain } from '../common/utils.js';
+import { getWellKnownDomain } from '../common/well-known-domains.js';
 
 class DBManager {
   constructor() {
@@ -359,11 +360,21 @@ class DBManager {
       sessions = sessions.filter(s => s.source !== 'approximated');
     }
 
-    // Filter out sessions waiting for server classification
-    sessions = sessions.filter(s =>
-      s.category !== 'uncategorized' &&
-      s.category !== 'needs_server_classification'
-    );
+    // Apply well-known domain fallback for unclassified sessions
+    sessions = sessions.map(s => {
+      if (s.category === 'needs_server_classification' || s.category === 'uncategorized') {
+        const visitUrl = s.visits?.[0]?.url;
+        if (visitUrl) {
+          try {
+            const domain = new URL(visitUrl).hostname.replace(/^www\./, '').toLowerCase();
+            const wellKnown = getWellKnownDomain(domain);
+            return { ...s, category: wellKnown?.category || 'other' };
+          } catch (e) { /* invalid URL */ }
+        }
+        return { ...s, category: 'other' };
+      }
+      return s;
+    });
 
     const categories = {};
     const domains = {}; // Track all domains with time

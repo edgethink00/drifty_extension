@@ -6366,10 +6366,21 @@ function processSessionsToMinutes(sessions, categoriesInfo) {
     Array.from({ length: 60 }, () => null)
   );
 
-  // Filter out unclassified sessions that would show as gray
-  const classified = sessions.filter(s =>
-    s.category && s.category !== 'uncategorized' && s.category !== 'needs_server_classification'
-  );
+  // Apply well-known domain fallback for unclassified sessions
+  const classified = sessions.map(s => {
+    if (!s.category || s.category === 'uncategorized' || s.category === 'needs_server_classification') {
+      const visitUrl = s.visits?.[0]?.url;
+      if (visitUrl) {
+        try {
+          const domain = new URL(visitUrl).hostname.replace(/^www\./, '').toLowerCase();
+          const wellKnown = getWellKnownDomain(domain);
+          return { ...s, category: wellKnown?.category || 'other' };
+        } catch (e) { /* invalid URL */ }
+      }
+      return { ...s, category: 'other' };
+    }
+    return s;
+  });
 
   classified.forEach(session => {
     const productivityType = getProductivityType(session.category);

@@ -5,8 +5,9 @@ import { serverSync } from './server-sync.js';
 import { historyAnalyzer } from './history-analyzer.js';
 import { remoteDeviceTracker } from './remote-device-tracker.js';
 import { categoryScheduler } from './category-scheduler.js';
-import { getTodayDate, getDateFromTimestamp } from '../common/utils.js';
+import { getTodayDate, getDateFromTimestamp, normalizeDomain } from '../common/utils.js';
 import { PRODUCTIVITY_GROUPS } from '../common/constants.js';
+import { getWellKnownDomain } from '../common/well-known-domains.js';
 
 // Initialize extension
 const SW_START_TIME = Date.now();
@@ -496,12 +497,22 @@ async function getTodayStats() {
   }
   stats.source = 'merged';
 
-  // Add current session to stats if exists (skip unclassified sessions)
+  // Add current session to stats if exists (apply well-known domain fallback for unclassified)
   const currentSession = sessionTracker.getCurrentSession();
-  if (currentSession.session &&
-      currentSession.session.category !== 'needs_server_classification' &&
-      currentSession.session.category !== 'uncategorized') {
-    const category = currentSession.session.category;
+  if (currentSession.session) {
+    let category = currentSession.session.category;
+    if (category === 'needs_server_classification' || category === 'uncategorized') {
+      const visitUrl = currentSession.session.visits?.[0]?.url;
+      if (visitUrl) {
+        try {
+          const domain = new URL(visitUrl).hostname.replace(/^www\./, '').toLowerCase();
+          const wellKnown = getWellKnownDomain(domain);
+          category = wellKnown?.category || 'other';
+        } catch (e) { category = 'other'; }
+      } else {
+        category = 'other';
+      }
+    }
     const subcategory = currentSession.session.subcategory || 'general';
     const duration = Date.now() - currentSession.session.startTime;
 
@@ -677,34 +688,44 @@ async function getDateStats(date) {
         sessions.push(liveSession);
       }
 
-      // Update stats with current session (skip unclassified)
-      const category = currentSession.session.category;
-      if (category !== 'needs_server_classification' && category !== 'uncategorized') {
-        const subcategory = currentSession.session.subcategory || 'general';
-        if (!stats.categories) stats.categories = {};
-        if (!stats.categories[category]) {
-          stats.categories[category] = { time: 0, sessionCount: 0, topSites: [], subcategories: {} };
+      // Update stats with current session (apply well-known domain fallback for unclassified)
+      let category = currentSession.session.category;
+      if (category === 'needs_server_classification' || category === 'uncategorized') {
+        const visitUrl = currentSession.session.visits?.[0]?.url;
+        if (visitUrl) {
+          try {
+            const domain = new URL(visitUrl).hostname.replace(/^www\./, '').toLowerCase();
+            const wellKnown = getWellKnownDomain(domain);
+            category = wellKnown?.category || 'other';
+          } catch (e) { category = 'other'; }
+        } else {
+          category = 'other';
         }
-
-        // Ensure subcategories object exists
-        if (!stats.categories[category].subcategories) {
-          stats.categories[category].subcategories = {};
-        }
-
-        // Update category time
-        stats.categories[category].time += currentDuration;
-
-        // Update subcategory time
-        if (!stats.categories[category].subcategories[subcategory]) {
-          stats.categories[category].subcategories[subcategory] = {
-            time: 0,
-            sessionCount: 0
-          };
-        }
-        stats.categories[category].subcategories[subcategory].time += currentDuration;
-
-        stats.totalTime = (stats.totalTime || 0) + currentDuration;
       }
+      const subcategory = currentSession.session.subcategory || 'general';
+      if (!stats.categories) stats.categories = {};
+      if (!stats.categories[category]) {
+        stats.categories[category] = { time: 0, sessionCount: 0, topSites: [], subcategories: {} };
+      }
+
+      // Ensure subcategories object exists
+      if (!stats.categories[category].subcategories) {
+        stats.categories[category].subcategories = {};
+      }
+
+      // Update category time
+      stats.categories[category].time += currentDuration;
+
+      // Update subcategory time
+      if (!stats.categories[category].subcategories[subcategory]) {
+        stats.categories[category].subcategories[subcategory] = {
+          time: 0,
+          sessionCount: 0
+        };
+      }
+      stats.categories[category].subcategories[subcategory].time += currentDuration;
+
+      stats.totalTime = (stats.totalTime || 0) + currentDuration;
     }
   }
 

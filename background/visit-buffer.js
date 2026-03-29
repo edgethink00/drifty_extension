@@ -108,13 +108,16 @@ class VisitBuffer {
     chrome.alarms.create('flushVisitBuffer', {
       periodInMinutes: 5
     });
+  }
 
-    chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === 'flushVisitBuffer') {
-        console.log('[VisitBuffer] Alarm-triggered flush');
-        this.flush();
-      }
-    });
+  /**
+   * Handle alarm events (called from centralized dispatcher in service-worker.js)
+   */
+  handleAlarm(alarm) {
+    if (alarm.name === 'flushVisitBuffer') {
+      console.log('[VisitBuffer] Alarm-triggered flush');
+      this.flush();
+    }
   }
 
   /**

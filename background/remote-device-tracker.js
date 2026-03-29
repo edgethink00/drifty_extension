@@ -24,6 +24,17 @@ class RemoteDeviceTracker {
   constructor() {
     this.isPolling = false;
     this.processedVisitIds = new Set(); // Track already-processed visit IDs to prevent duplicates
+    this._ready = false;
+  }
+
+  /**
+   * Handle alarm events (called from centralized dispatcher in service-worker.js)
+   */
+  handleAlarm(alarm) {
+    if (!this._ready) return;
+    if (alarm.name === 'pollRemoteHistory') {
+      this.pollRemoteHistory();
+    }
   }
 
   /**
@@ -35,15 +46,10 @@ class RemoteDeviceTracker {
       periodInMinutes: POLL_INTERVAL_MINUTES
     });
 
-    chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === 'pollRemoteHistory') {
-        this.pollRemoteHistory();
-      }
-    });
-
     // Initial poll after a short delay
     setTimeout(() => this.pollRemoteHistory(), 10000);
 
+    this._ready = true;
     console.log('[RemoteDeviceTracker] Initialized (2h lookback, 3min polling)');
   }
 

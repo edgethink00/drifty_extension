@@ -5,6 +5,7 @@ import { serverSync } from './server-sync.js';
 import { historyAnalyzer } from './history-analyzer.js';
 import { remoteDeviceTracker } from './remote-device-tracker.js';
 import { categoryScheduler } from './category-scheduler.js';
+import { visitBuffer } from './visit-buffer.js';
 import { getTodayDate, getDateFromTimestamp, normalizeDomain } from '../common/utils.js';
 import { PRODUCTIVITY_GROUPS } from '../common/constants.js';
 import { getWellKnownDomain } from '../common/well-known-domains.js';
@@ -13,45 +14,53 @@ import { getWellKnownDomain } from '../common/well-known-domains.js';
 const SW_START_TIME = Date.now();
 console.log(`deTime - Service Worker starting at ${new Date().toISOString()}...`);
 
-// Initialize modules in sequence (serverSync depends on dbManager being initialized)
-sessionTracker.init()
-  .then(() => {
-    console.log('Session Tracker initialized successfully');
-    // Run data migrations to fix invalid category data
-    return Promise.all([
-      dbManager.fixInvalidCategorySessions(),
-      dbManager.fixInvalidCategoryDailyStats()
-    ]);
-  })
-  .then(() => {
+// Centralized alarm dispatcher — MUST be top-level for MV3
+// (listeners registered inside async init() can be lost on SW restart)
+chrome.alarms.onAlarm.addListener((alarm) => {
+  const name = alarm.name;
+  // session-tracker
+  if (name === 'checkIdle')              sessionTracker.handleAlarm(alarm);
+  else if (name === 'saveSession')       sessionTracker.handleAlarm(alarm);
+  // server-sync
+  else if (name === 'serverSync')        serverSync.handleAlarm(alarm);
+  else if (name === 'statsUpload')       serverSync.handleAlarm(alarm);
+  else if (name === 'categorySync')      serverSync.handleAlarm(alarm);
+  // remote-device-tracker
+  else if (name === 'pollRemoteHistory') remoteDeviceTracker.handleAlarm(alarm);
+  // category-scheduler
+  else if (name === 'categorize-batch')  categoryScheduler.handleAlarm(alarm);
+  else if (name === 'categorize-retry')  categoryScheduler.handleAlarm(alarm);
+  // visit-buffer
+  else if (name === 'flushVisitBuffer')  visitBuffer.handleAlarm(alarm);
+});
+
+// Initialize modules — each step is independent so one failure doesn't block others
+(async () => {
+  try { await sessionTracker.init(); console.log('Session Tracker initialized'); }
+  catch (e) { console.error('Session Tracker init failed:', e); }
+
+  try {
+    await Promise.all([dbManager.fixInvalidCategorySessions(), dbManager.fixInvalidCategoryDailyStats()]);
     console.log('Data migrations completed');
-    // Now initialize server sync (after dbManager is ready)
-    return serverSync.init();
-  })
-  .then(() => {
-    console.log('Server Sync initialized successfully');
-    // Download initial domain cache
-    return serverSync.downloadDomainCache();
-  })
-  .then(() => {
-    console.log('Domain cache downloaded');
-    // Initialize remote device tracker
-    return remoteDeviceTracker.init();
-  })
-  .then(() => {
-    console.log('Remote Device Tracker initialized');
-    // Initialize category scheduler for retrying needs_server_classification visits
-    return categoryScheduler.init();
-  })
-  .then(() => {
-    console.log('Category Scheduler initialized');
-    console.log('deTime fully initialized');
-    // Auto-run history analysis if no data exists
-    return checkAndRunHistoryAnalysis();
-  })
-  .catch(error => {
-    console.error('Failed to initialize deTime:', error);
-  });
+  } catch (e) { console.error('Data migrations failed:', e); }
+
+  try { await serverSync.init(); console.log('Server Sync initialized'); }
+  catch (e) { console.error('Server Sync init failed:', e); }
+
+  try { await serverSync.downloadDomainCache(); console.log('Domain cache downloaded'); }
+  catch (e) { console.error('Domain cache download failed:', e); }
+
+  try { await remoteDeviceTracker.init(); console.log('Remote Device Tracker initialized'); }
+  catch (e) { console.error('Remote Device Tracker init failed:', e); }
+
+  try { await categoryScheduler.init(); console.log('Category Scheduler initialized'); }
+  catch (e) { console.error('Category Scheduler init failed:', e); }
+
+  console.log('deTime fully initialized');
+
+  try { await checkAndRunHistoryAnalysis(); }
+  catch (e) { console.error('History analysis check failed:', e); }
+})();
 
 /**
  * Check if history analysis should run automatically
@@ -439,6 +448,11 @@ async function handleMessage(message, sender, sendResponse) {
             deviceSource: s.deviceSource
           }))
         };
+        try {
+          debugData.categoryScheduler = await categoryScheduler.getStatus();
+        } catch (e) {
+          debugData.categoryScheduler = { error: e.message };
+        }
         sendResponse({ success: true, data: debugData });
         break;
       }

@@ -35,6 +35,7 @@ class SessionTracker {
     this.timeoutId = null;
     this.isUserIdle = false;
     this._sessionEndReasons = {}; // Track why sessions ended
+    this._ready = false;
   }
 
   /**
@@ -129,12 +130,32 @@ class SessionTracker {
   }
 
   /**
+   * Handle alarm events (called from centralized dispatcher in service-worker.js)
+   */
+  handleAlarm(alarm) {
+    if (!this._ready) return;
+    debugLog('ALARM', {
+      name: alarm.name,
+      hasSession: !!this.currentSession,
+      sessionCategory: this.currentSession?.category,
+      durationSoFar: this.currentSession ? Math.round((Date.now() - this.currentSession.startTime) / 1000) + 's' : null,
+      isUserIdle: this.isUserIdle
+    });
+    if (alarm.name === 'checkIdle') {
+      this.checkIdleTimeout();
+    } else if (alarm.name === 'saveSession') {
+      this.saveActiveSession();
+    }
+  }
+
+  /**
    * Initialize session tracker
    */
   async init() {
     debugLog('INIT_START', { idleThreshold: USER_IDLE_THRESHOLD, sessionTimeouts: SESSION_TIMEOUTS });
     await dbManager.init();
     this.setupListeners();
+    this._ready = true;
     debugLog('INIT_DONE');
     console.log('Session Tracker initialized');
   }
@@ -211,20 +232,6 @@ class SessionTracker {
     // Periodically save active session to prevent data loss
     chrome.alarms.create('saveSession', { periodInMinutes: 1 });
 
-    chrome.alarms.onAlarm.addListener((alarm) => {
-      debugLog('ALARM', {
-        name: alarm.name,
-        hasSession: !!this.currentSession,
-        sessionCategory: this.currentSession?.category,
-        durationSoFar: this.currentSession ? Math.round((Date.now() - this.currentSession.startTime) / 1000) + 's' : null,
-        isUserIdle: this.isUserIdle
-      });
-      if (alarm.name === 'checkIdle') {
-        this.checkIdleTimeout();
-      } else if (alarm.name === 'saveSession') {
-        this.saveActiveSession();
-      }
-    });
   }
 
   /**

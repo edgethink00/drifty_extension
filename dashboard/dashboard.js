@@ -1823,6 +1823,15 @@ async function downloadDebugLog() {
     lines.push('  Idle API events:     ' + st.idleEvents);
     lines.push('');
 
+    const csched = d.categoryScheduler || {};
+    lines.push('[Category Scheduler]');
+    lines.push('  Last run:         ' + (csched.lastRun || 'never'));
+    lines.push('  Server health:    ' + (csched.serverHealth || '?'));
+    lines.push('  Consecutive fail: ' + (csched.consecutiveFailures ?? '?'));
+    lines.push('  Pending sessions: ' + (csched.pendingCount ?? '?'));
+    if (csched.error) lines.push('  Error:            ' + csched.error);
+    lines.push('');
+
     lines.push('[End Reason Breakdown]');
     const reasons = Object.entries(st.endReasons || {}).sort((a, b) => b[1] - a[1]);
     if (reasons.length === 0) {

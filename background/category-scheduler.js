@@ -23,6 +23,7 @@ class CategoryScheduler {
     this.MAX_BACKOFF_MS = 900_000;      // 15 minutes (cap)
     this.MAX_CONSECUTIVE_FAILURES = 10;
     this.BATCH_RETRY_DELAY_MS = 2000;   // 2 seconds for immediate batch retry
+    this._ready = false;
   }
 
   // ============================================
@@ -166,6 +167,16 @@ class CategoryScheduler {
     }
   }
 
+  /**
+   * Handle alarm events (called from centralized dispatcher in service-worker.js)
+   */
+  handleAlarm(alarm) {
+    if (!this._ready) return;
+    if (alarm.name === this.alarmName || alarm.name === this.retryAlarmName) {
+      this.processBatch();
+    }
+  }
+
   // ============================================
   // Initialization
   // ============================================
@@ -197,13 +208,6 @@ class CategoryScheduler {
       periodInMinutes: 30
     });
 
-    // Listen for both periodic and retry alarms
-    chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === this.alarmName || alarm.name === this.retryAlarmName) {
-        this.processBatch();
-      }
-    });
-
     // Recover retry state after service worker restart
     await this._recoverRetryState();
 
@@ -216,6 +220,7 @@ class CategoryScheduler {
       setTimeout(() => this.processBatch(), 10_000); // 10s delay for other inits to finish
     }
 
+    this._ready = true;
     console.log('[CategoryScheduler] Initialized and alarm set');
   }
 

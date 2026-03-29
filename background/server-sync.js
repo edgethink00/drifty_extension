@@ -11,6 +11,21 @@ class ServerSync {
     this.pendingStats = [];
     this.lastSyncTime = null;
     this.syncInProgress = false;
+    this._ready = false;
+  }
+
+  /**
+   * Handle alarm events (called from centralized dispatcher in service-worker.js)
+   */
+  handleAlarm(alarm) {
+    if (!this._ready) return;
+    if (alarm.name === 'serverSync') {
+      this.checkForUpdates();
+    } else if (alarm.name === 'statsUpload') {
+      this.uploadPendingStats();
+    } else if (alarm.name === 'categorySync') {
+      this.syncCategoriesFromServer();
+    }
   }
 
   /**
@@ -36,16 +51,7 @@ class ServerSync {
       periodInMinutes: 10
     });
 
-    chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === 'serverSync') {
-        this.checkForUpdates();
-      } else if (alarm.name === 'statsUpload') {
-        this.uploadPendingStats();
-      } else if (alarm.name === 'categorySync') {
-        this.syncCategoriesFromServer();
-      }
-    });
-
+    this._ready = true;
     console.log('Server Sync initialized');
   }
 

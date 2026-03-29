@@ -1824,12 +1824,18 @@ async function downloadDebugLog() {
     lines.push('');
 
     const csched = d.categoryScheduler || {};
+    const cHealth = csched.serverHealth || {};
     lines.push('[Category Scheduler]');
-    lines.push('  Last run:         ' + (csched.lastRun || 'never'));
-    lines.push('  Server health:    ' + (csched.serverHealth || '?'));
-    lines.push('  Consecutive fail: ' + (csched.consecutiveFailures ?? '?'));
-    lines.push('  Pending sessions: ' + (csched.pendingCount ?? '?'));
-    if (csched.error) lines.push('  Error:            ' + csched.error);
+    lines.push('  Last run:           ' + (csched.lastRun ? new Date(csched.lastRun).toISOString() : 'never'));
+    lines.push('  Is processing:      ' + (csched.isProcessing ?? '?'));
+    lines.push('  Offset minutes:     ' + (csched.offsetMinutes ?? '?'));
+    lines.push('  Server healthy:     ' + (cHealth.isHealthy ?? '?'));
+    lines.push('  Consecutive fail:   ' + (cHealth.consecutiveFailures ?? 0));
+    lines.push('  Last success:       ' + (cHealth.lastSuccessTime ? new Date(cHealth.lastSuccessTime).toISOString() : 'never'));
+    lines.push('  Last failure:       ' + (cHealth.lastFailureTime ? new Date(cHealth.lastFailureTime).toISOString() : 'never'));
+    lines.push('  Current backoff:    ' + (cHealth.currentBackoffMs ?? 0) + 'ms');
+    lines.push('  Pending sessions:   ' + (csched.pendingCount ?? '?'));
+    if (csched.error) lines.push('  Error:              ' + csched.error);
     lines.push('');
 
     lines.push('[End Reason Breakdown]');

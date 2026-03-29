@@ -745,10 +745,19 @@ class CategoryScheduler {
     const scheduler = settings.categoryScheduler || {};
     const health = scheduler.serverHealth || {};
 
+    // Count sessions needing classification
+    let pendingCount = 0;
+    try {
+      const needsClassification = ['uncategorized', 'needs_server_classification', 'other'];
+      const sessions = await dbManager.getAllSessions();
+      pendingCount = sessions.filter(s => needsClassification.includes(s.category) || !s.subcategory).length;
+    } catch (e) { /* ignore */ }
+
     return {
       offsetMinutes: scheduler.offsetMinutes || 0,
       lastRun: scheduler.lastRun || null,
       isProcessing: this.isProcessing,
+      pendingCount,
       serverHealth: {
         consecutiveFailures: health.consecutiveFailures || 0,
         lastFailureTime: health.lastFailureTime || null,

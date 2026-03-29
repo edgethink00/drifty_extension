@@ -45,10 +45,9 @@ class HistoryAnalyzer {
     this.progress = { current: 0, total: 0, phase: 'Fetching history...' };
 
     try {
-      // Fetch history - EXCLUDE today (real-time tracking handles today)
-      const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-      const endTime = todayStart - 1; // End at 23:59:59 yesterday
+      // Include today — real-time tracking is unreliable due to SW restarts,
+      // so history analysis fills the gaps. Dedup handled in saveToDB().
+      const endTime = Date.now();
       const startTime = endTime - (days * 24 * 60 * 60 * 1000);
 
       if (onProgress) onProgress(this.progress);
@@ -150,12 +149,14 @@ class HistoryAnalyzer {
   }
 
   /**
-   * Tag history items with device source (local vs remote)
-   * Uses chrome.history.getVisits() to check isLocal field (Chrome 115+)
-   * Keeps URL-level granularity (1 item per URL, same as history.search returns)
-   * Tags based on most recent visit's isLocal status within the time range
+   * Expand URL-level history items into individual visits with device tagging.
+   * chrome.history.search() returns 1 entry per URL (lastVisitTime only).
+   * This function calls getVisits() per URL and expands into individual visits
+   * so that revisits to the same URL at different times are all captured.
    */
   async tagVisitsWithDevice(historyItems, startTime, endTime) {
+    const expandedVisits = [];
+
     for (const item of historyItems) {
       try {
         const visits = await new Promise((resolve, reject) => {
@@ -172,26 +173,30 @@ class HistoryAnalyzer {
         const rangeVisits = visits.filter(v => v.visitTime >= startTime && v.visitTime <= endTime);
 
         if (rangeVisits.length > 0) {
-          // Check if any visit in range is local
-          const hasLocal = rangeVisits.some(v => v.isLocal === true || v.isLocal === undefined);
-          const hasRemote = rangeVisits.some(v => v.isLocal === false);
-
-          // If both local and remote visits exist, prefer local (device was used for this URL)
-          item.isLocal = hasLocal ? true : false;
+          // Expand: one entry per actual visit
+          for (const visit of rangeVisits) {
+            expandedVisits.push({
+              url: item.url,
+              title: item.title || '',
+              lastVisitTime: visit.visitTime,
+              visitCount: 1,
+              isLocal: visit.isLocal === undefined ? true : visit.isLocal
+            });
+          }
         } else {
-          // No visits in range — default to local
-          item.isLocal = true;
+          // No visits in range — keep original item as fallback
+          expandedVisits.push({ ...item, isLocal: true });
         }
       } catch (e) {
-        // On error, treat as local
-        item.isLocal = true;
+        // On error, keep original item
+        expandedVisits.push({ ...item, isLocal: true });
       }
     }
 
-    const localCount = historyItems.filter(v => v.isLocal).length;
-    const remoteCount = historyItems.filter(v => !v.isLocal).length;
-    console.log(`[HistoryAnalyzer] Tagged ${historyItems.length} URLs: ${localCount} local, ${remoteCount} remote`);
-    return historyItems;
+    const localCount = expandedVisits.filter(v => v.isLocal).length;
+    const remoteCount = expandedVisits.filter(v => !v.isLocal).length;
+    console.log(`[HistoryAnalyzer] Expanded ${historyItems.length} URLs → ${expandedVisits.length} visits (${localCount} local, ${remoteCount} remote)`);
+    return expandedVisits;
   }
 
   /**
@@ -465,9 +470,29 @@ class HistoryAnalyzer {
 
       console.log(`[HistoryAnalyzer] Saving ${formattedSessions.length} sessions to DB...`);
 
-      // Start transaction and save synchronously (no await inside transaction)
+      // Delete old approximated sessions for the dates being updated (prevent duplicates)
+      const datesToUpdate = [...new Set(formattedSessions.map(s => s.date))];
+      const oldApproxIds = [];
+      for (const date of datesToUpdate) {
+        const existing = await dbManager.getSessionsByDate(date);
+        for (const session of existing) {
+          if (session.source === 'approximated') {
+            oldApproxIds.push(session.id);
+          }
+        }
+      }
+
+      if (oldApproxIds.length > 0) {
+        console.log(`[HistoryAnalyzer] Removing ${oldApproxIds.length} old approximated sessions`);
+      }
+
+      // Start transaction: delete old approximated, then save new
       const sessionsTransaction = dbManager.db.transaction(['sessions'], 'readwrite');
       const sessionsStore = sessionsTransaction.objectStore('sessions');
+
+      for (const id of oldApproxIds) {
+        sessionsStore.delete(id);
+      }
 
       for (const formattedSession of formattedSessions) {
         sessionsStore.put(formattedSession);

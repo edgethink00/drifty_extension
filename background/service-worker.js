@@ -96,11 +96,16 @@ async function checkAndRunHistoryAnalysis() {
       }
     }
 
-    // If no data, run history analysis
     if (!hasData) {
+      // First time: full 30-day analysis
       console.log('No existing data found. Running automatic history analysis...');
       const result = await historyAnalyzer.analyzeHistory(30);
       console.log('Automatic history analysis completed:', result);
+    } else {
+      // Backfill: re-analyze last 2 days to fill gaps from SW restarts
+      console.log('Running 2-day backfill history analysis...');
+      const result = await historyAnalyzer.analyzeHistory(2);
+      console.log('Backfill history analysis completed:', result);
     }
   } catch (error) {
     console.error('Error in automatic history analysis:');

@@ -53,7 +53,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["dashboard/*", "settings/*", "blocked.html", "onboarding/*"],
+      "resources": ["dashboard/*", "blocked.html", "onboarding/*"],
       "matches": ["<all_urls>"]
     }
   ]

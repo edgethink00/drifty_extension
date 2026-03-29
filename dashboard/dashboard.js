@@ -1709,6 +1709,7 @@ document.getElementById('privacyHideTimeline')?.addEventListener('change', async
 });
 
 document.getElementById('exportDataBtn')?.addEventListener('click', exportData);
+document.getElementById('downloadDebugBtn')?.addEventListener('click', downloadDebugLog);
 document.getElementById('clearDataBtn')?.addEventListener('click', async () => {
   if (confirm('Are you sure you want to clear ALL data? This cannot be undone.')) {
     try {
@@ -1748,6 +1749,148 @@ async function exportData() {
   } catch (error) {
     console.error('Error exporting data:', error);
     alert('Failed to export data');
+  }
+}
+
+// ============================================
+// Debug Log Download
+// ============================================
+function fmtDebugMs(ms) {
+  if (!ms || ms < 0) return '0s';
+  const sec = Math.floor(ms / 1000);
+  const min = Math.floor(sec / 60);
+  const hr = Math.floor(min / 60);
+  if (hr > 0) return hr + 'h ' + (min % 60) + 'm ' + (sec % 60) + 's';
+  if (min > 0) return min + 'm ' + (sec % 60) + 's';
+  return sec + 's';
+}
+
+async function downloadDebugLog() {
+  const btn = document.getElementById('downloadDebugBtn');
+  btn.textContent = '⏳ Collecting...';
+  btn.disabled = true;
+
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_DEBUG_DATA' });
+    if (!resp.success) {
+      alert('Error: ' + resp.error);
+      return;
+    }
+
+    const d = resp.data;
+    const lines = [];
+
+    lines.push('========================================');
+    lines.push('  deTime Session Debug Report');
+    lines.push('  Generated: ' + new Date().toISOString());
+    lines.push('========================================');
+    lines.push('');
+
+    const sw = d.serviceWorker || {};
+    lines.push('[Service Worker]');
+    lines.push('  Started at:  ' + (sw.startTime || '?'));
+    lines.push('  Uptime:      ' + (sw.uptimeMin || 0) + ' min');
+    lines.push('');
+
+    const cs = d.currentState;
+    lines.push('[Current State]');
+    lines.push('  Session active:  ' + cs.hasCurrentSession);
+    lines.push('  Session state:   ' + cs.sessionState);
+    lines.push('  Is user idle:    ' + cs.isUserIdle);
+    lines.push('  Last activity:   ' + (cs.lastActivityTime || 'never'));
+    if (cs.hasCurrentSession) {
+      lines.push('  Session ID:      ' + cs.currentSessionId);
+      lines.push('  Category:        ' + cs.currentSessionCategory);
+      lines.push('  Started at:      ' + cs.currentSessionStartTime);
+      lines.push('  Duration so far: ' + fmtDebugMs(cs.currentSessionDuration));
+      lines.push('  Visit count:     ' + cs.currentSessionVisitCount);
+    }
+    lines.push('');
+
+    const db = d.db;
+    lines.push('[DB Summary - Today]');
+    lines.push('  Session count:         ' + db.todaySessionCount);
+    lines.push('  Total (from sessions): ' + fmtDebugMs(db.todayTotalTimeFromSessions) + ' (' + (db.todayTotalTimeFromSessions / 60000).toFixed(1) + ' min)');
+    lines.push('  Total (dailyStats):    ' + fmtDebugMs(db.todayStatsTotal) + ' (' + (db.todayStatsTotal / 60000).toFixed(1) + ' min)');
+    lines.push('');
+
+    const st = d.stats;
+    lines.push('[Debug Stats]');
+    lines.push('  Total events logged: ' + st.totalEvents);
+    lines.push('  Sessions started:    ' + st.sessionStarts);
+    lines.push('  Sessions ended:      ' + st.sessionEnds);
+    lines.push('  Focus lost events:   ' + st.focusLost);
+    lines.push('  Idle API events:     ' + st.idleEvents);
+    lines.push('');
+
+    lines.push('[End Reason Breakdown]');
+    const reasons = Object.entries(st.endReasons || {}).sort((a, b) => b[1] - a[1]);
+    if (reasons.length === 0) {
+      lines.push('  (none)');
+    } else {
+      for (const [reason, count] of reasons) {
+        lines.push('  ' + reason.padEnd(35) + ' x' + count);
+      }
+    }
+    lines.push('');
+
+    lines.push('========================================');
+    lines.push('[Today\'s Sessions - Detail]');
+    lines.push('========================================');
+    const sessions = [...db.sessions].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+    for (const s of sessions) {
+      lines.push('');
+      lines.push('--- Session ' + s.id + ' ---');
+      lines.push('  Category:    ' + s.category + ' (confidence: ' + (s.confidence || '?') + ', method: ' + (s.method || '?') + ')');
+      lines.push('  Start:       ' + s.startTime);
+      lines.push('  End:         ' + (s.endTime || '(active)'));
+      lines.push('  Duration:    ' + fmtDebugMs(s.duration || 0) + ' (' + (s.durationMin || 0) + ' min)');
+      lines.push('  Visits:      ' + s.visitCount);
+      lines.push('  Active:      ' + (s.isActive ? 'YES' : 'no'));
+      lines.push('  End reason:  ' + (s.endReason || '-'));
+      lines.push('  Source:      ' + (s.source || 'tracked'));
+      lines.push('  Device:      ' + (s.deviceSource || 'local'));
+      if (s.visits && s.visits.length > 0) {
+        lines.push('  Visit list:');
+        for (const v of s.visits) {
+          lines.push('    [' + v.time + '] ' + (v.category || '') + ' | ' + v.url);
+          if (v.title) lines.push('      title: ' + v.title);
+        }
+      }
+    }
+    lines.push('');
+
+    lines.push('========================================');
+    lines.push('[Full Event Log (' + d.debugLog.length + ' entries)]');
+    lines.push('========================================');
+    for (const e of d.debugLog) {
+      const data = Object.entries(e)
+        .filter(([k]) => !['t', 'ts', 'event'].includes(k))
+        .map(([k, v]) => k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v))
+        .join('  ');
+      lines.push(e.t + '  ' + e.event.padEnd(28) + '  ' + data);
+    }
+
+    const text = lines.join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'detime-debug-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    btn.textContent = '✓ Downloaded!';
+    setTimeout(() => {
+      btn.textContent = '🐛 Download Debug Log';
+      btn.disabled = false;
+    }, 2000);
+
+  } catch (error) {
+    console.error('Error downloading debug log:', error);
+    alert('Failed to download debug log');
+    btn.textContent = '🐛 Download Debug Log';
+    btn.disabled = false;
   }
 }
 

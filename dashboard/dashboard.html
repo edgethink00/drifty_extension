@@ -199,8 +199,31 @@
             </section>
 
             <section class="card card-small card-full-col">
-              <h3>Most Used Sites</h3>
+              <div class="most-used-header-row">
+                <h3>Most Used Sites</h3>
+                <div class="view-toggle-group">
+                  <button class="view-toggle-btn active" data-view="list" data-target="today" title="List View">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="2" rx="1" fill="currentColor"/><rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor"/><rect x="1" y="12" width="14" height="2" rx="1" fill="currentColor"/></svg>
+                  </button>
+                  <button class="view-toggle-btn" data-view="bubble" data-target="today" title="Bubble View">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="11" cy="10" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="4" cy="12" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                  </button>
+                </div>
+              </div>
               <div id="todayMostUsed" class="most-used-list">
+              </div>
+              <div id="todayBubbleView" class="bubble-view-container" style="display:none;">
+                <div class="bubble-color-mode-bar" data-target="today">
+                  <button class="bubble-mode-btn active" data-mode="clean" title="Clean">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                  </button>
+                  <button class="bubble-mode-btn" data-mode="favicon" title="Favicon Colors">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="7" cy="7" r="3" fill="currentColor"/></svg>
+                  </button>
+                  <button class="bubble-mode-btn" data-mode="category" title="Category Colors">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" fill="currentColor"/></svg>
+                  </button>
+                </div>
               </div>
             </section>
           </div>
@@ -354,8 +377,31 @@
             </section>
 
             <section class="card card-small">
-              <h3>Most Used Sites</h3>
+              <div class="most-used-header-row">
+                <h3>Most Used Sites</h3>
+                <div class="view-toggle-group">
+                  <button class="view-toggle-btn active" data-view="list" data-target="week" title="List View">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="2" rx="1" fill="currentColor"/><rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor"/><rect x="1" y="12" width="14" height="2" rx="1" fill="currentColor"/></svg>
+                  </button>
+                  <button class="view-toggle-btn" data-view="bubble" data-target="week" title="Bubble View">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="11" cy="10" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="4" cy="12" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                  </button>
+                </div>
+              </div>
               <div id="weekMostUsed" class="most-used-list">
+              </div>
+              <div id="weekBubbleView" class="bubble-view-container" style="display:none;">
+                <div class="bubble-color-mode-bar" data-target="week">
+                  <button class="bubble-mode-btn active" data-mode="clean" title="Clean">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                  </button>
+                  <button class="bubble-mode-btn" data-mode="favicon" title="Favicon Colors">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="7" cy="7" r="3" fill="currentColor"/></svg>
+                  </button>
+                  <button class="bubble-mode-btn" data-mode="category" title="Category Colors">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" fill="currentColor"/></svg>
+                  </button>
+                </div>
               </div>
             </section>
           </div>

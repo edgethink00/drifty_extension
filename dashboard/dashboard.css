@@ -1342,6 +1342,460 @@ body {
   border-color: var(--primary);
 }
 
+/* View Toggle */
+.most-used-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.most-used-header-row h3 {
+  margin: 0;
+}
+
+.view-toggle-group {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.view-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.view-toggle-btn:hover {
+  color: var(--text-secondary);
+}
+
+.view-toggle-btn.active {
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Bubble View Container */
+.bubble-view-container {
+  position: relative;
+  width: 100%;
+  height: 420px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(ellipse at 25% 20%, rgba(0, 122, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 75% 80%, rgba(52, 199, 89, 0.02) 0%, transparent 50%),
+    var(--bg);
+}
+
+[data-theme="dark"] .bubble-view-container {
+  background:
+    radial-gradient(ellipse at 25% 20%, rgba(0, 122, 255, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 75% 80%, rgba(52, 199, 89, 0.04) 0%, transparent 50%),
+    var(--bg);
+}
+
+/* Bubble Color Mode Bar */
+.bubble-color-mode-bar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: 3px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+  z-index: 20;
+}
+
+.bubble-mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.bubble-mode-btn:hover {
+  color: var(--text-secondary);
+}
+
+.bubble-mode-btn.active {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+/* ── Individual Bubble ── */
+.bubble-item {
+  position: absolute;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  cursor: pointer;
+  transition:
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    filter 0.35s ease;
+  will-change: transform;
+  overflow: hidden;
+}
+
+/* ── Soap-bubble shine (shared across all modes) ── */
+.bubble-item::before {
+  content: '';
+  position: absolute;
+  top: 6%;
+  left: 14%;
+  width: 38%;
+  height: 28%;
+  background:
+    radial-gradient(ellipse at 40% 35%,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.18) 40%,
+      transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.9;
+  transform: rotate(-12deg);
+}
+
+/* Secondary rim-light highlight */
+.bubble-item::after {
+  content: '';
+  position: absolute;
+  bottom: 8%;
+  right: 12%;
+  width: 20%;
+  height: 12%;
+  background: radial-gradient(ellipse,
+    rgba(255, 255, 255, 0.2) 0%,
+    transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.6;
+  transform: rotate(15deg);
+}
+
+/* ── Hover / Active states ── */
+.bubble-item:hover {
+  transform: scale(1.1) !important;
+  z-index: 10;
+  filter: brightness(1.05);
+}
+
+.bubble-item.mode-clean:hover {
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.08),
+    0 0 0 2px var(--bubble-outline-color, #8E8E93);
+}
+
+.bubble-item.mode-favicon:hover {
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.12),
+    0 0 0 2px var(--bubble-outline-color, #8E8E93),
+    0 0 24px var(--bubble-glow-color, rgba(0, 0, 0, 0.1));
+}
+
+.bubble-item.mode-category:hover {
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.18),
+    0 0 24px var(--bubble-glow-color, rgba(0, 0, 0, 0.1));
+}
+
+[data-theme="dark"] .bubble-item.mode-clean:hover {
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.25),
+    0 0 0 2px var(--bubble-outline-color, #8E8E93);
+}
+
+[data-theme="dark"] .bubble-item.mode-favicon:hover {
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.35),
+    0 0 0 2px var(--bubble-outline-color, #8E8E93),
+    0 0 24px var(--bubble-glow-color, rgba(0, 0, 0, 0.15));
+}
+
+[data-theme="dark"] .bubble-item.mode-category:hover {
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.4),
+    0 0 24px var(--bubble-glow-color, rgba(0, 0, 0, 0.15));
+}
+
+.bubble-item:active {
+  transform: scale(0.96) !important;
+  transition-duration: 0.1s;
+}
+
+/* ── Mode: Clean (frosted glass, category outline) ── */
+.bubble-item.mode-clean {
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.6) 0%, transparent 50%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(245, 245, 250, 0.85));
+  border: 2px solid var(--bubble-outline-color, #8E8E93);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.04),
+    0 4px 16px rgba(0, 0, 0, 0.03),
+    inset 0 1px 2px rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+[data-theme="dark"] .bubble-item.mode-clean {
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+    linear-gradient(145deg, rgba(66, 66, 68, 0.95), rgba(53, 53, 55, 0.9));
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 1px 2px rgba(255, 255, 255, 0.06);
+}
+
+/* ── Mode: Favicon (extracted color bg, category outline) ── */
+.bubble-item.mode-favicon {
+  border: 2px solid var(--bubble-outline-color, #8E8E93);
+  box-shadow:
+    0 3px 12px rgba(0, 0, 0, 0.08),
+    0 6px 20px rgba(0, 0, 0, 0.05),
+    inset 0 1px 3px rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .bubble-item.mode-favicon {
+  box-shadow:
+    0 3px 12px rgba(0, 0, 0, 0.2),
+    0 6px 20px rgba(0, 0, 0, 0.15),
+    inset 0 1px 3px rgba(255, 255, 255, 0.08);
+}
+
+/* ── Mode: Category (rich gradient bg) ── */
+.bubble-item.mode-category {
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 3px 12px rgba(0, 0, 0, 0.1),
+    0 6px 24px rgba(0, 0, 0, 0.06),
+    inset 0 1px 3px rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .bubble-item.mode-category {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 3px 12px rgba(0, 0, 0, 0.25),
+    0 6px 24px rgba(0, 0, 0, 0.15),
+    inset 0 1px 3px rgba(255, 255, 255, 0.1);
+}
+
+/* ── Favicon image ── */
+.bubble-favicon {
+  width: 50%;
+  height: 50%;
+  max-width: 40px;
+  max-height: 40px;
+  border-radius: 20%;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.12));
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  position: relative;
+  z-index: 3;
+}
+
+.mode-category .bubble-favicon {
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.2));
+}
+
+.mode-favicon .bubble-favicon {
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.18));
+}
+
+/* ── Label ── */
+.bubble-label {
+  position: absolute;
+  bottom: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  white-space: nowrap;
+  max-width: 85%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  z-index: 3;
+  transition: opacity 0.2s ease;
+}
+
+/* Label per mode */
+.mode-clean .bubble-label {
+  color: var(--text-secondary);
+  text-shadow: none;
+  font-weight: 500;
+}
+
+.mode-favicon .bubble-label {
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 0 8px rgba(0, 0, 0, 0.15);
+}
+
+.mode-category .bubble-label {
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 0 6px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Bubble physics (JS-driven) ── */
+.bubble-item.floating {
+  /* No CSS animation — position updated by requestAnimationFrame */
+  transition: none;
+}
+
+/* Bubble Detail Popup */
+.bubble-detail-popup {
+  position: fixed;
+  z-index: 1000;
+  min-width: 220px;
+  max-width: 300px;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  opacity: 0;
+  transform: scale(0.85) translateY(8px);
+  transition: opacity 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+
+.bubble-detail-popup.visible {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  pointer-events: auto;
+}
+
+[data-theme="dark"] .bubble-detail-popup {
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.08);
+}
+
+.bubble-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.bubble-detail-favicon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.bubble-detail-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bubble-detail-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bubble-detail-category {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bubble-detail-category-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.bubble-detail-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bubble-detail-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bubble-detail-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.bubble-detail-stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.bubble-detail-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.bubble-detail-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.bubble-detail-hint {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-light);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
 /* Summary Card (Stats + Goals combined) */
 .card-summary {
   padding: 14px 16px;

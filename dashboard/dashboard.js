@@ -4488,6 +4488,444 @@ function renderMostUsedItems(container, containerId = 'today') {
   }
 }
 
+// Store current bubble color mode per container
+const bubbleColorModes = { today: 'clean', week: 'clean' };
+// Cache packed positions so mode switches don't re-layout
+const bubbleLayoutCache = {};
+
+/**
+ * Extract dominant color from a favicon image using canvas sampling
+ */
+function extractDominantColor(imgEl) {
+  return new Promise((resolve) => {
+    const fallback = '#8E8E93';
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = 16;
+      canvas.height = 16;
+      ctx.drawImage(imgEl, 0, 0, 16, 16);
+      const data = ctx.getImageData(0, 0, 16, 16).data;
+      let r = 0, g = 0, b = 0, count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const a = data[i + 3];
+        if (a < 128) continue; // skip transparent
+        const pr = data[i], pg = data[i + 1], pb = data[i + 2];
+        // skip near-white and near-black
+        if (pr > 240 && pg > 240 && pb > 240) continue;
+        if (pr < 15 && pg < 15 && pb < 15) continue;
+        r += pr; g += pg; b += pb; count++;
+      }
+      if (count === 0) { resolve(fallback); return; }
+      r = Math.round(r / count);
+      g = Math.round(g / count);
+      b = Math.round(b / count);
+      resolve(`rgb(${r},${g},${b})`);
+    } catch (e) {
+      resolve(fallback);
+    }
+  });
+}
+
+/**
+ * Render bubble view for most used sites
+ */
+function renderBubbleView(containerId) {
+  const listContainer = document.getElementById(containerId === 'today' ? 'todayMostUsed' : 'weekMostUsed');
+  const bubbleContainer = document.getElementById(containerId === 'today' ? 'todayBubbleView' : 'weekBubbleView');
+  const allSites = listContainer.allSites || [];
+  const totalTime = listContainer.totalDayTime || 1;
+  const mode = bubbleColorModes[containerId] || 'clean';
+
+  // Take top 20 sites for bubbles
+  const sites = allSites.slice(0, 20);
+  if (sites.length === 0) {
+    const modeBar = bubbleContainer.querySelector('.bubble-color-mode-bar');
+    bubbleContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-tertiary);font-size:14px;">No site data yet</div>';
+    if (modeBar) bubbleContainer.prepend(modeBar);
+    return;
+  }
+
+  const containerWidth = bubbleContainer.clientWidth || 600;
+  const containerHeight = 420;
+
+  // Calculate bubble sizes
+  const maxTime = Math.max(...sites.map(s => s.time));
+  const minSize = 44;
+  const maxSize = Math.min(130, containerWidth / 3);
+
+  const bubbles = sites.map((site, i) => {
+    const ratio = Math.sqrt(site.time / maxTime);
+    const size = Math.max(minSize, Math.round(minSize + (maxSize - minSize) * ratio));
+    const faviconDomain = site.domain || site.name;
+    return { ...site, size, index: i, faviconDomain };
+  });
+
+  // Use cached layout or compute new one
+  const cacheKey = `${containerId}_${sites.map(s => s.name).join(',')}`;
+  let positions = bubbleLayoutCache[cacheKey];
+
+  if (!positions) {
+    const placed = [];
+    const padding = 6;
+    positions = [];
+
+    bubbles.forEach(bubble => {
+      let bestX = containerWidth / 2;
+      let bestY = containerHeight / 2;
+      let bestDist = Infinity;
+      const r = bubble.size / 2;
+
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const x = r + Math.random() * (containerWidth - bubble.size);
+        const y = r + Math.random() * (containerHeight - bubble.size);
+
+        let overlaps = false;
+        for (const p of placed) {
+          const dx = x - p.x;
+          const dy = y - p.y;
+          const minDist = r + p.r + padding;
+          if (dx * dx + dy * dy < minDist * minDist) {
+            overlaps = true;
+            break;
+          }
+        }
+
+        if (!overlaps) {
+          const cx = containerWidth / 2;
+          const cy = containerHeight / 2;
+          const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestX = x;
+            bestY = y;
+          }
+        }
+      }
+
+      positions.push({ x: bestX, y: bestY, r: bubble.size / 2 });
+      placed.push({ x: bestX, y: bestY, r: bubble.size / 2 });
+    });
+
+    bubbleLayoutCache[cacheKey] = positions;
+  }
+
+  // Apply cached positions
+  bubbles.forEach((bubble, i) => {
+    bubble.x = positions[i].x;
+    bubble.y = positions[i].y;
+    bubble.r = positions[i].r;
+  });
+
+  // Generate HTML based on mode
+  const html = bubbles.map(bubble => {
+    const primaryUrl = `https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${bubble.faviconDomain}&size=128`;
+    const fallbackUrl = `https://icons.duckduckgo.com/ip3/${bubble.faviconDomain}.ico`;
+    const categoryColor = bubble.color || '#8E8E93';
+
+    const showLabel = bubble.size >= 60;
+
+    // Mode-specific styles
+    let bgStyle, modeVars;
+    if (mode === 'category') {
+      // Rich gradient: lighter at top-left, darker at bottom-right
+      bgStyle = `background: linear-gradient(145deg, color-mix(in srgb, ${categoryColor} 80%, white 20%), ${categoryColor}, color-mix(in srgb, ${categoryColor} 85%, black 15%));`;
+      modeVars = `--bubble-glow-color: ${categoryColor}44;`;
+    } else if (mode === 'clean') {
+      bgStyle = '';
+      modeVars = `--bubble-outline-color: ${categoryColor};`;
+    } else {
+      // favicon mode: bg set later via JS color extraction
+      bgStyle = `background: linear-gradient(145deg, #e0e0e0, #c8c8c8);`;
+      modeVars = `--bubble-outline-color: ${categoryColor};`;
+    }
+
+    return `
+      <div class="bubble-item floating mode-${mode}"
+           data-bubble-index="${bubble.index}"
+           data-container-id="${containerId}"
+           data-favicon-domain="${bubble.faviconDomain}"
+           style="
+             left: ${bubble.x - bubble.r}px;
+             top: ${bubble.y - bubble.r}px;
+             width: ${bubble.size}px;
+             height: ${bubble.size}px;
+             ${bgStyle}
+             ${modeVars}
+           ">
+        <img class="bubble-favicon" src="${primaryUrl}" alt="${bubble.name}"
+             onerror="this.onerror=null; this.src='${fallbackUrl}'"
+             ${mode === 'favicon' ? 'crossorigin="anonymous"' : ''}>
+        ${showLabel ? `<span class="bubble-label">${bubble.name}</span>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  // Preserve mode bar, replace bubble content
+  const modeBar = bubbleContainer.querySelector('.bubble-color-mode-bar');
+  bubbleContainer.innerHTML = html;
+  if (modeBar) bubbleContainer.prepend(modeBar);
+
+  // For favicon mode, extract colors after images load
+  if (mode === 'favicon') {
+    bubbleContainer.querySelectorAll('.bubble-item').forEach(el => {
+      const img = el.querySelector('.bubble-favicon');
+      const applyColor = () => {
+        extractDominantColor(img).then(color => {
+          // Build a soft gradient from the extracted color
+          const lighter = `color-mix(in srgb, ${color} 75%, white 25%)`;
+          const darker = `color-mix(in srgb, ${color} 85%, black 15%)`;
+          el.style.background = `linear-gradient(145deg, ${lighter}, ${color}, ${darker})`;
+          el.style.setProperty('--bubble-glow-color', color.replace('rgb', 'rgba').replace(')', ', 0.25)'));
+        });
+      };
+      if (img.complete && img.naturalWidth > 0) {
+        applyColor();
+      } else {
+        img.addEventListener('load', applyColor);
+      }
+    });
+  }
+
+  // Add click handlers for bubbles
+  bubbleContainer.querySelectorAll('.bubble-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const index = parseInt(el.dataset.bubbleIndex);
+      const site = sites[index];
+      if (!site) return;
+      showBubbleDetail(el, site, totalTime, containerId);
+    });
+  });
+
+  // Start physics-based animation
+  startBubblePhysics(bubbleContainer);
+}
+
+/**
+ * Show bubble detail popup near the clicked bubble
+ */
+function showBubbleDetail(bubbleEl, site, totalTime, containerId) {
+  // Remove existing popup
+  closeBubbleDetail();
+
+  const rect = bubbleEl.getBoundingClientRect();
+  const pct = Math.round((site.time / totalTime) * 100);
+  const faviconDomain = site.domain || site.name;
+  const primaryUrl = `https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${faviconDomain}&size=128`;
+  const fallbackUrl = `https://icons.duckduckgo.com/ip3/${faviconDomain}.ico`;
+  const bgColor = site.color || '#8E8E93';
+
+  const popup = document.createElement('div');
+  popup.className = 'bubble-detail-popup';
+  popup.id = 'activeBubbleDetail';
+  popup.innerHTML = `
+    <div class="bubble-detail-header">
+      <img class="bubble-detail-favicon" src="${primaryUrl}" alt=""
+           onerror="this.onerror=null; this.src='${fallbackUrl}'"
+      <div class="bubble-detail-info">
+        <div class="bubble-detail-name">${site.name}</div>
+        <div class="bubble-detail-category">
+          <span class="bubble-detail-category-dot" style="background:${bgColor}"></span>
+          ${site.categoryName || site.category}
+        </div>
+      </div>
+    </div>
+    <div class="bubble-detail-stats">
+      <div class="bubble-detail-stat">
+        <span class="bubble-detail-stat-label">Time spent</span>
+        <span class="bubble-detail-stat-value">${formatTime(site.time)}</span>
+      </div>
+      <div class="bubble-detail-stat">
+        <span class="bubble-detail-stat-label">Share</span>
+        <span class="bubble-detail-stat-value">${pct}%</span>
+      </div>
+      <div class="bubble-detail-bar">
+        <div class="bubble-detail-bar-fill" style="width:${pct}%;background:${bgColor}"></div>
+      </div>
+    </div>
+    <div class="bubble-detail-hint">Click anywhere to close</div>
+  `;
+
+  document.body.appendChild(popup);
+
+  // Position popup near the bubble
+  requestAnimationFrame(() => {
+    const popupRect = popup.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - popupRect.width / 2;
+    let top = rect.bottom + 12;
+
+    // If popup goes below viewport, show above
+    if (top + popupRect.height > window.innerHeight - 16) {
+      top = rect.top - popupRect.height - 12;
+    }
+    // Keep within horizontal bounds
+    left = Math.max(16, Math.min(left, window.innerWidth - popupRect.width - 16));
+    // Keep within vertical bounds
+    top = Math.max(16, Math.min(top, window.innerHeight - popupRect.height - 16));
+
+    popup.style.left = left + 'px';
+    popup.style.top = top + 'px';
+
+    // Trigger animation
+    requestAnimationFrame(() => popup.classList.add('visible'));
+  });
+
+  // Close on click outside
+  const closeHandler = (e) => {
+    if (!popup.contains(e.target) || e.target === popup) {
+      closeBubbleDetail();
+      document.removeEventListener('click', closeHandler, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeHandler, true), 50);
+}
+
+/**
+ * Close bubble detail popup
+ */
+function closeBubbleDetail() {
+  const existing = document.getElementById('activeBubbleDetail');
+  if (existing) {
+    existing.classList.remove('visible');
+    setTimeout(() => existing.remove(), 250);
+  }
+}
+
+/**
+ * Physics-based bubble animation engine
+ * Each bubble drifts with velocity, has gentle random forces,
+ * bounces off walls softly, and repels nearby bubbles.
+ */
+let bubblePhysicsRAF = null;
+let bubblePhysicsState = null;
+
+function startBubblePhysics(bubbleContainer) {
+  stopBubblePhysics();
+
+  const els = bubbleContainer.querySelectorAll('.bubble-item');
+  if (els.length === 0) return;
+
+  const containerWidth = bubbleContainer.clientWidth || 600;
+  const containerHeight = 420;
+
+  // Initialize physics state for each bubble
+  const bodies = [];
+  els.forEach(el => {
+    const size = parseFloat(el.style.width);
+    const r = size / 2;
+    const x = parseFloat(el.style.left) + r;
+    const y = parseFloat(el.style.top) + r;
+    // Random initial velocity — very gentle
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.15 + Math.random() * 0.25;
+    bodies.push({
+      el,
+      x, y, r,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      originX: x,
+      originY: y,
+      hovered: false,
+    });
+
+    // Pause on hover
+    const body = bodies[bodies.length - 1];
+    el.addEventListener('mouseenter', () => { body.hovered = true; });
+    el.addEventListener('mouseleave', () => { body.hovered = false; });
+  });
+
+  bubblePhysicsState = bodies;
+
+  let lastTime = performance.now();
+
+  function tick(now) {
+    const dt = Math.min((now - lastTime) / 16.67, 3); // normalize to ~60fps, cap
+    lastTime = now;
+
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i];
+      if (b.hovered) continue;
+
+      // 1. Gentle random drift force (Brownian-like)
+      b.vx += (Math.random() - 0.5) * 0.02 * dt;
+      b.vy += (Math.random() - 0.5) * 0.02 * dt;
+
+      // 2. Weak pull back toward origin (elastic leash)
+      const dx = b.originX - b.x;
+      const dy = b.originY - b.y;
+      b.vx += dx * 0.0003 * dt;
+      b.vy += dy * 0.0003 * dt;
+
+      // 3. Damping (friction)
+      b.vx *= 0.997;
+      b.vy *= 0.997;
+
+      // 4. Speed limit
+      const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+      const maxSpeed = 0.6;
+      if (speed > maxSpeed) {
+        b.vx = (b.vx / speed) * maxSpeed;
+        b.vy = (b.vy / speed) * maxSpeed;
+      }
+
+      // 5. Move
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+
+      // 6. Wall bounce (soft)
+      const margin = 2;
+      if (b.x - b.r < margin) { b.x = b.r + margin; b.vx = Math.abs(b.vx) * 0.5; }
+      if (b.x + b.r > containerWidth - margin) { b.x = containerWidth - b.r - margin; b.vx = -Math.abs(b.vx) * 0.5; }
+      if (b.y - b.r < margin) { b.y = b.r + margin; b.vy = Math.abs(b.vy) * 0.5; }
+      if (b.y + b.r > containerHeight - margin) { b.y = containerHeight - b.r - margin; b.vy = -Math.abs(b.vy) * 0.5; }
+    }
+
+    // 7. Bubble-bubble repulsion
+    for (let i = 0; i < bodies.length; i++) {
+      for (let j = i + 1; j < bodies.length; j++) {
+        const a = bodies[i], b = bodies[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distSq = dx * dx + dy * dy;
+        const minDist = a.r + b.r + 4;
+        if (distSq < minDist * minDist && distSq > 0) {
+          const dist = Math.sqrt(distSq);
+          const overlap = minDist - dist;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          // Push apart
+          const pushForce = overlap * 0.05;
+          if (!a.hovered) { a.vx -= nx * pushForce; a.vy -= ny * pushForce; }
+          if (!b.hovered) { b.vx += nx * pushForce; b.vy += ny * pushForce; }
+          // Separate positions
+          const sep = overlap * 0.3;
+          if (!a.hovered) { a.x -= nx * sep; a.y -= ny * sep; }
+          if (!b.hovered) { b.x += nx * sep; b.y += ny * sep; }
+        }
+      }
+    }
+
+    // 8. Apply positions to DOM
+    for (const b of bodies) {
+      b.el.style.left = (b.x - b.r) + 'px';
+      b.el.style.top = (b.y - b.r) + 'px';
+    }
+
+    bubblePhysicsRAF = requestAnimationFrame(tick);
+  }
+
+  bubblePhysicsRAF = requestAnimationFrame(tick);
+}
+
+function stopBubblePhysics() {
+  if (bubblePhysicsRAF) {
+    cancelAnimationFrame(bubblePhysicsRAF);
+    bubblePhysicsRAF = null;
+  }
+  bubblePhysicsState = null;
+}
+
 /**
  * Load sessions for all dates in the current week view
  */
@@ -9481,3 +9919,49 @@ if (document.readyState === 'loading') {
 // ╔══════════════════════════════════════════════════════════════╗
 // ║  MOCKUP MODE — END                                         ║
 // ╚══════════════════════════════════════════════════════════════╝
+
+/**
+ * Initialize view toggle for Most Used Sites
+ */
+document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const view = btn.dataset.view;
+    const target = btn.dataset.target;
+
+    // Update active state
+    btn.parentElement.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const listContainer = document.getElementById(target === 'today' ? 'todayMostUsed' : 'weekMostUsed');
+    const bubbleContainer = document.getElementById(target === 'today' ? 'todayBubbleView' : 'weekBubbleView');
+
+    if (view === 'bubble') {
+      listContainer.style.display = 'none';
+      bubbleContainer.style.display = 'block';
+      renderBubbleView(target);
+    } else {
+      listContainer.style.display = '';
+      bubbleContainer.style.display = 'none';
+      stopBubblePhysics();
+      closeBubbleDetail();
+    }
+  });
+});
+
+/**
+ * Initialize bubble color mode toggles
+ */
+document.querySelectorAll('.bubble-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const mode = btn.dataset.mode;
+    const target = btn.closest('.bubble-color-mode-bar').dataset.target;
+
+    // Update active state
+    btn.parentElement.querySelectorAll('.bubble-mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    // Store and re-render
+    bubbleColorModes[target] = mode;
+    renderBubbleView(target);
+  });
+});

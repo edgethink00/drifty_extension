@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.playwright-mcp/
+.omc/
+.omo/
+.claude/
+.codegraph
+AGENTS.md
+EOF
+issue-draft-*.md
+todo.md
+.DS_Store

@@ -1,8 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import { browserTrackerClient, DRIFTY_CATEGORY_METADATA, DRIFTY_PRODUCTIVITY_METADATA } from '../lib/drifty';
 import { formatDuration, formatTimeLabel, pluralize } from '../shared/format';
-import { StatusBox, type ToneItem } from '../shared/SurfacePrimitives';
+import { StatusBox, ThemeToggle, type ToneItem } from '../shared/SurfacePrimitives';
+import { SiteFavicon, AppGlyph } from '../dashboard/IdentityIcon';
+import { useTheme } from '../shared/theme';
 import { mountSurface } from '../shared/mount';
+
+const POPUP_DONUT_CIRCUMFERENCE = 2 * Math.PI * 16;
+
+function PopupFocusRing({ percent }: { percent: number }) {
+  const dash = Math.max(0, Math.min(1, percent / 100)) * POPUP_DONUT_CIRCUMFERENCE;
+  return (
+    <div className="popup-focus-ring" role="img" aria-label={`Focus ${percent}% of tracked time today`}>
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <circle className="popup-focus-ring__track" cx="20" cy="20" r="16" />
+        <circle className="popup-focus-ring__arc" cx="20" cy="20" r="16" strokeDasharray={`${dash} ${POPUP_DONUT_CIRCUMFERENCE}`} strokeDashoffset={0} transform="rotate(-90 20 20)" />
+      </svg>
+      <div className="popup-focus-ring__center">
+        <span>Focus</span>
+        <strong>{percent}%</strong>
+      </div>
+    </div>
+  );
+}
 
 document.title = 'Drifty | Quick View';
 
@@ -101,6 +121,11 @@ function PopupApp() {
         color: productivityToneColor[item.productivity]
       }));
   }, [today]);
+  const focusPercent = useMemo(() => {
+    const focus = today?.productivityDurations.find((item) => item.productivity === 'focus');
+    return focus && today && today.totalSeconds > 0 ? Math.round((focus.totalSeconds / today.totalSeconds) * 100) : 0;
+  }, [today]);
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <main className="surface surface--popup">
@@ -111,6 +136,7 @@ function PopupApp() {
             <h1>Your browser time</h1>
             <p className="muted">Local browser time, sites, and drift at a glance.</p>
           </div>
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </header>
 
         {state.status === 'error' ? (
@@ -123,10 +149,7 @@ function PopupApp() {
             <strong>{formatDuration(today?.totalSeconds ?? 0)}</strong>
             <p className="muted">{pluralize(today?.segments.length ?? 0, 'local segment')}</p>
           </div>
-          <div className="popup-stat-ring" role="img" aria-label={`Leading productivity mix: ${productivityItems[0]?.label ?? 'Quiet'} ${productivityItems[0] ? Math.round(productivityItems[0].ratio * 100) : 0}%`}>
-            <span>{productivityItems[0]?.label ?? 'Quiet'}</span>
-            <strong>{productivityItems[0] ? Math.round(productivityItems[0].ratio * 100) : 0}%</strong>
-          </div>
+          <PopupFocusRing percent={focusPercent} />
         </section>
 
         <section className="popup-section popup-current-site-card">
@@ -151,7 +174,7 @@ function PopupApp() {
               <div className="popup-compact-list">
                 {categoryItems.slice(0, 3).map((item) => (
                   <div className="popup-compact-row" key={item.label}>
-                    <span>{item.label}</span>
+                    <span className="popup-compact-row__label"><span className="popup-dot" style={{ background: item.color }} aria-hidden="true" />{item.label}</span>
                     <strong>{formatDuration(item.seconds)}</strong>
                   </div>
                 ))}
@@ -165,7 +188,12 @@ function PopupApp() {
               <div className="popup-compact-list">
                 {today.topActivities.slice(0, 2).map((activity) => (
                   <div className="popup-compact-row" key={`${activity.usageKind}-${activity.siteDomain ?? activity.appName}`}>
-                    <span className="truncate">{activity.siteDomain ?? activity.appName}</span>
+                    <span className="popup-compact-row__label">
+                      <span className="popup-compact-row__icon">
+                        {activity.siteDomain ? <SiteFavicon domain={activity.siteDomain} size={16} /> : <AppGlyph appName={activity.appName} size="sm" />}
+                      </span>
+                      <span className="truncate">{activity.siteDomain ?? activity.appName}</span>
+                    </span>
                     <strong>{formatDuration(activity.totalSeconds)}</strong>
                   </div>
                 ))}

@@ -17,6 +17,7 @@ export type DriftyRuntimeMessageMap = {
   GET_CURRENT_SESSION: { request: { type: 'GET_CURRENT_SESSION' }; response: unknown };
   GET_POPUP_DATA: { request: { type: 'GET_POPUP_DATA' }; response: unknown };
   GET_SETTINGS: { request: { type: 'GET_SETTINGS' }; response: unknown };
+  SAVE_SETTINGS: { request: { type: 'SAVE_SETTINGS'; settings: unknown }; response: unknown };
   GET_CATEGORIES: { request: { type: 'GET_CATEGORIES' }; response: unknown };
 };
 

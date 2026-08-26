@@ -95,6 +95,50 @@ export function ToneBars({ items, emptyTitle, emptyDetail }: { items: ToneItem[]
   );
 }
 
+export function Toggle({ checked, onChange, ariaLabel, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; ariaLabel: string; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      className={`drifty-toggle${checked ? ' drifty-toggle--on' : ''}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="drifty-toggle__thumb" aria-hidden="true" />
+    </button>
+  );
+}
+
+export function SettingsSelect<T extends string>({ value, options, onChange, ariaLabel }: { value: T; options: ReadonlyArray<{ value: T; label: string }>; onChange: (value: T) => void; ariaLabel: string }) {
+  return (
+    <select className="settings-select" aria-label={ariaLabel} value={value} onChange={(event) => onChange(event.target.value as T)}>
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>{option.label}</option>
+      ))}
+    </select>
+  );
+}
+
+export function ThemeToggle({ theme, onToggle }: { theme: 'light' | 'dark'; onToggle: () => void }) {
+  const nextLabel = theme === 'dark' ? 'light' : 'dark';
+  return (
+    <button type="button" className="theme-toggle" onClick={onToggle} aria-label={`Switch to ${nextLabel} theme`} title={`Switch to ${nextLabel} theme`}>
+      {theme === 'dark' ? (
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 export function PrivacyPills({ runtimeReady }: { runtimeReady: boolean }) {
   return (
     <div className="pill-row" aria-label="Privacy status">
@@ -108,7 +152,7 @@ export function PrivacyPills({ runtimeReady }: { runtimeReady: boolean }) {
 export type NavItem = {
   id: string;
   label: string;
-  icon: 'home' | 'calendar' | 'classify' | 'history' | 'settings';
+  icon: 'home' | 'calendar' | 'trends' | 'classify' | 'history' | 'settings';
   detail?: string;
 };
 
@@ -119,6 +163,8 @@ function NavIcon({ type }: { type: NavItem['icon'] }) {
       return <svg {...props}><path d="M3 10.5L12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" /></svg>;
     case 'calendar':
       return <svg {...props}><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /><path d="M8 14h2M14 14h2M8 17h2" /></svg>;
+    case 'trends':
+      return <svg {...props}><path d="M3 17l5-5 4 4 8-8" /><path d="M16 8h5v5" /></svg>;
     case 'classify':
       return <svg {...props}><path d="M4 5h16M4 12h10M4 19h14" /><circle cx="18" cy="12" r="2" /><circle cx="20" cy="19" r="2" /></svg>;
     case 'history':
@@ -132,18 +178,20 @@ export function Sidebar({
   activeTab,
   onTabChange,
   navItems,
-  logoSrc
+  logoSrc,
+  tracker
 }: {
   activeTab: string;
   onTabChange: (id: string) => void;
   navItems: Array<{ section: string; items: NavItem[] }>;
   logoSrc?: string;
+  tracker?: { enabled: boolean; onToggle: () => void; currentLabel?: string | null; currentDuration?: string | null; todayTotal?: string | null };
 }) {
   return (
     <aside className="sidebar" aria-label="Dashboard navigation">
       <div className="brand" aria-label="Drifty">
         {logoSrc ? <img className="brand__logo" src={logoSrc} alt="" aria-hidden="true" /> : null}
-        <div className="brand__dot" aria-hidden="true" />
+        <span className="brand__name">Drifty</span>
       </div>
       {navItems.map((section) => (
         <div key={section.section}>
@@ -164,6 +212,29 @@ export function Sidebar({
           </nav>
         </div>
       ))}
+      {tracker ? (
+        <div className="sidebar-foot">
+          <div className="sidebar-session-card">
+            <span className={`sidebar-tracker-toggle__dot${tracker.enabled ? ' is-live' : ''}`} aria-hidden="true" />
+            <div className="sidebar-session-card__copy">
+              <strong className="truncate">{tracker.enabled ? (tracker.currentLabel ?? 'No active session') : 'Tracking paused'}</strong>
+              <small>{tracker.enabled ? (tracker.currentDuration ? `Current · ${tracker.currentDuration}` : `Today · ${tracker.todayTotal ?? '0m'}`) : 'No new activity recorded'}</small>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`sidebar-pause-button${tracker.enabled ? '' : ' sidebar-pause-button--resume'}`}
+            onClick={tracker.onToggle}
+            aria-pressed={!tracker.enabled}
+          >
+            {tracker.enabled ? 'Pause tracking' : 'Resume tracking'}
+          </button>
+          <div className="sidebar-account" aria-label="Account">
+            <span className="sidebar-account__avatar" aria-hidden="true">D</span>
+            <span className="sidebar-account__copy"><strong>This device</strong><small>Local only</small></span>
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { logicalDayIsoDateForDate, logicalMinuteOfDay, secondsToLabel, shiftIsoDate, type ActivityCategory } from '../lib/domain';
 import { DRIFTY_CATEGORY_METADATA, type DriftyStatsSummary, type DriftyWeeklyStatsSummary } from '../lib/drifty';
@@ -15,6 +15,7 @@ const CALENDAR_HOURS = Array.from({ length: CALENDAR_END_HOUR - CALENDAR_START_H
 
 type WeekViewData = {
   readonly week: DriftyWeeklyStatsSummary;
+  readonly weekFocusDeltaPercent?: number | null;
 };
 
 type WeekCalendarEventStyle = CSSProperties & {
@@ -48,6 +49,17 @@ export function WeekCalendarView({ data, startOfDayMinutes }: { data: WeekViewDa
     ? logicalMinuteOfDay(new Date().getHours() * 60 + new Date().getMinutes(), startOfDayMinutes)
     : null;
   const currentMarkerStyle = currentMinute === null ? null : nowMarkerStyle(currentMinute, rows.findIndex((row) => row.day === todayDay));
+  const earliestEventMinute = useMemo(() => {
+    let earliest: number | null = null;
+    for (const dayEvents of events.values()) {
+      for (const event of dayEvents) {
+        if (earliest === null || event.topMinutes < earliest) earliest = event.topMinutes;
+      }
+    }
+    return earliest;
+  }, [events]);
+  const autoScrollMinute = currentMinute ?? earliestEventMinute;
+  const focusDeltaPercent = data.weekFocusDeltaPercent ?? null;
 
   return (
     <div className="week-tab-surface week-v2" aria-label="Your week overview">
@@ -70,7 +82,9 @@ export function WeekCalendarView({ data, startOfDayMinutes }: { data: WeekViewDa
               })}
             </div>
             <div className="week-v2-summary__meta">
-              <span>No prior week</span>
+              <span className={focusDeltaPercent === null ? undefined : focusDeltaPercent >= 0 ? 'week-v2-summary__delta week-v2-summary__delta--up' : 'week-v2-summary__delta week-v2-summary__delta--down'}>
+                {focusDeltaPercent === null ? 'No prior week' : `${focusDeltaPercent >= 0 ? '▲' : '▼'} ${Math.abs(focusDeltaPercent)}% vs last week`}
+              </span>
               <span>Best {bestDay ? `${bestDay.dayName} ${bestDay.dayNumber}` : '-'}</span>
               <span>Focus share {focusShare}%</span>
               <span>Drift {secondsToLabel(driftSeconds)}</span>
@@ -78,7 +92,7 @@ export function WeekCalendarView({ data, startOfDayMinutes }: { data: WeekViewDa
           </div>
 
           <WeekCategoryLegend categories={categories.map((entry) => entry.category)} />
-          <WeekCalendarGrid rows={rows} events={events} currentMarkerStyle={currentMarkerStyle} startOfDayMinutes={startOfDayMinutes} todayDay={todayDay} />
+          <WeekCalendarGrid rows={rows} events={events} currentMarkerStyle={currentMarkerStyle} startOfDayMinutes={startOfDayMinutes} todayDay={todayDay} autoScrollMinute={autoScrollMinute} />
         </section>
 
         <aside className="week-v2-side" aria-label="Week time breakdown">
@@ -107,9 +121,19 @@ export function WeekCalendarView({ data, startOfDayMinutes }: { data: WeekViewDa
   );
 }
 
-function WeekCalendarGrid({ rows, events, currentMarkerStyle, startOfDayMinutes, todayDay }: { rows: ReturnType<typeof buildWeekDayRows>; events: Map<string, WeekCalendarEvent[]>; currentMarkerStyle: WeekCalendarNowMarkerStyle | null; startOfDayMinutes: number; todayDay: string }) {
+function WeekCalendarGrid({ rows, events, currentMarkerStyle, startOfDayMinutes, todayDay, autoScrollMinute }: { rows: ReturnType<typeof buildWeekDayRows>; events: Map<string, WeekCalendarEvent[]>; currentMarkerStyle: WeekCalendarNowMarkerStyle | null; startOfDayMinutes: number; todayDay: string; autoScrollMinute: number | null }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || autoScrollMinute === null) return;
+    // Center the target time, leaving ~1h of context above so "now"/first event is not flush to the top.
+    const targetOffset = (autoScrollMinute / 60) * CALENDAR_HOUR_HEIGHT - CALENDAR_HOUR_HEIGHT;
+    const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+    scroller.scrollTop = Math.min(Math.max(0, targetOffset), Math.max(0, maxScroll));
+  }, [autoScrollMinute]);
+
   return (
-    <div className="week-v2-calendar__scroller">
+    <div className="week-v2-calendar__scroller" ref={scrollerRef}>
       <div className="week-v2-calendar__day-head" aria-hidden="true">
         <span />
         {rows.map((row) => (

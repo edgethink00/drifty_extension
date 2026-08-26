@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent } from 'react';
+import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import {
   FLOW_INTERVAL_OPTIONS,
   buildAppUsageSummaries,
@@ -33,12 +33,16 @@ import {
   type DriftyWeeklyStatsSummary
 } from '../lib/drifty';
 import { formatDateLabel, formatDuration, pluralize } from '../shared/format';
-import { EmptyState, Metric, Panel, PrivacyPills, Sidebar, StatusBox, ToneBars, type ToneItem, type NavItem } from '../shared/SurfacePrimitives';
+import { EmptyState, Panel, SettingsSelect, Sidebar, StatusBox, ThemeToggle, Toggle, type NavItem } from '../shared/SurfacePrimitives';
+import { useTheme } from '../shared/theme';
+import { categoryColorVar, useCategoryColors } from '../shared/categoryColors';
 import { mountSurface } from '../shared/mount';
 import { ClassificationView } from './ClassificationView';
+import { FocusDriftSection } from './FocusDriftSection';
 import { DateNavigator } from './DateNavigator';
 import { AppGlyph, SiteFavicon } from './IdentityIcon';
 import { HistoryView } from './HistoryView';
+import { TrendsView } from './TrendsView';
 import { WeekCalendarView } from './WeekCalendarView';
 
 document.title = 'Drifty | Dashboard';
@@ -46,12 +50,14 @@ document.title = 'Drifty | Dashboard';
 type DashboardData = {
   today: DriftyStatsSummary;
   week: DriftyWeeklyStatsSummary;
+  weekFocusDeltaPercent: number | null;
   day: string;
+  startOfDayMinutes: number;
   currentSession: ActivitySegment | null;
   settings: DriftyBrowserSettings & { legacy: unknown };
   categories: DriftyBrowserCategory[];
 };
-type TabKey = 'day' | 'week' | 'classification' | 'history' | 'settings';
+type TabKey = 'day' | 'week' | 'trends' | 'classification' | 'history' | 'settings';
 type AppIconMap = Record<string, string | null>;
 type SegmentWithIconSource = ActivitySegment & {
   appIconSrc?: string | null;
@@ -106,6 +112,15 @@ const FLOW_CATEGORY_GROUPS: FlowCategoryGroup[] = [
 
 const FLOW_BREAKDOWN_PRODUCTIVITY_ORDER: ProductivityLabel[] = ['focus', 'drift', 'neutral'];
 
+type FlowColorMode = 'category' | 'productivity';
+
+const FLOW_COLOR_MODE_OPTIONS = [
+  { id: 'category', label: 'Category' },
+  { id: 'productivity', label: 'Productivity' }
+] as const satisfies readonly { readonly id: FlowColorMode; readonly label: string }[];
+
+const FLOW_PRODUCTIVITY_LEGEND_ORDER: ProductivityLabel[] = ['focus', 'neutral', 'drift'];
+
 type LoadState = {
   status: 'loading' | 'ready' | 'error';
   data: DashboardData | null;
@@ -142,7 +157,8 @@ const navSections: Array<{ section: string; items: NavItem[] }> = [
     section: 'Dashboard',
     items: [
       { id: 'day', label: 'Today', icon: 'home', detail: 'Daily view' },
-      { id: 'week', label: 'Week', icon: 'calendar', detail: 'Calendar week' }
+      { id: 'week', label: 'Week', icon: 'calendar', detail: 'Calendar week' },
+      { id: 'trends', label: 'Trends', icon: 'trends', detail: 'Week over week' }
     ]
   },
   {
@@ -217,6 +233,12 @@ function flowSubtitle(block: FlowBlock): string {
 
 function blockDisplayName(block: FlowBlock): string {
   return block.siteDomain ?? block.siteTitle ?? block.appName;
+}
+
+function blockIdentityKey(block: FlowBlock): string {
+  if (block.siteDomain) return `site:${block.siteDomain}`;
+  if (block.siteTitle) return `title:${block.siteTitle}`;
+  return `app:${block.bundleId ?? block.appName}`;
 }
 
 function blockContextLabel(block: FlowBlock, intervalMinutes: FlowIntervalMinutes): string {
@@ -348,29 +370,76 @@ function currentMinuteOfDay(): number {
   return now.getHours() * 60 + now.getMinutes();
 }
 
+// drifty_mac uses a time-of-day greeting on the daily view and a section title elsewhere.
+function dashboardHeading(tab: TabKey): string {
+  if (tab === 'day') {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning.';
+    if (hour < 18) return 'Good afternoon.';
+    return 'Good evening.';
+  }
+  const titles: Record<Exclude<TabKey, 'day'>, string> = {
+    week: 'Your week',
+    trends: 'Patterns and trends',
+    classification: 'Activity breakdown',
+    history: 'Browser history',
+    settings: 'Settings'
+  };
+  return titles[tab];
+}
+
+// Default fallback start-of-day (4:00 AM); the real value comes from saved settings.
 function dashboardStartOfDayMinutes(): number {
-  return 4 * 60;
+  return DRIFTY_BROWSER_SETTINGS_DEFAULTS.preferences.startOfDayMinutes;
 }
 
 async function loadDashboardData(selectedDay?: string) {
-  const startOfDayMinutes = dashboardStartOfDayMinutes();
+  const settings = await browserTrackerClient.getSettings().catch(() => ({ ...DRIFTY_BROWSER_SETTINGS_DEFAULTS, legacy: null }));
+  const startOfDayMinutes = normalizeStartOfDayMinutes(settings.preferences?.startOfDayMinutes ?? dashboardStartOfDayMinutes());
   const logicalToday = selectedDay ?? logicalDayIsoDateForDate(new Date(), startOfDayMinutes);
   const nextCalendarDay = shiftIsoDate(logicalToday, 1);
   const realToday = logicalDayIsoDateForDate(new Date(), startOfDayMinutes);
-  const [logicalStartStats, logicalEndStats, week, currentSession, settings, categories] = await Promise.all([
+  const [logicalStartStats, logicalEndStats, week, currentSession, categories] = await Promise.all([
     browserTrackerClient.getDateStats(logicalToday),
     browserTrackerClient.getDateStats(nextCalendarDay),
     browserTrackerClient.getWeeklyStats(),
     logicalToday === realToday ? browserTrackerClient.getCurrentSession().catch(() => null) : Promise.resolve(null),
-    browserTrackerClient.getSettings().catch(() => ({ ...DRIFTY_BROWSER_SETTINGS_DEFAULTS, legacy: null })),
     browserTrackerClient.getCategories().catch(() => DRIFTY_CATEGORY_LIST.map((category) => ({ ...category, legacyKeys: [] } as DriftyBrowserCategory)))
   ]);
   const today = buildLogicalDaySummary(logicalToday, startOfDayMinutes, dedupeActivitySegments([
     ...logicalStartStats.segments,
     ...logicalEndStats.segments
   ]));
+  const weekFocusDeltaPercent = await computeWeekFocusDeltaPercent(week);
 
-  return { today, week, day: logicalToday, currentSession, settings, categories };
+  return { today, week, weekFocusDeltaPercent, day: logicalToday, startOfDayMinutes, currentSession, settings, categories };
+}
+
+function focusSecondsOf(summary: DriftyStatsSummary): number {
+  return summary.productivityDurations.find((entry) => entry.productivity === 'focus')?.totalSeconds ?? 0;
+}
+
+// Compare current week's focus share against the prior week (same logical days shifted by 7),
+// returning the percentage-point delta, or null when there is no prior-week activity.
+async function computeWeekFocusDeltaPercent(week: DriftyWeeklyStatsSummary): Promise<number | null> {
+  const dates = week.days.map((day) => day.date).filter((date): date is string => Boolean(date));
+  if (dates.length === 0 || week.totalSeconds <= 0) return null;
+
+  const priorStats = await Promise.all(
+    dates.map((date) => browserTrackerClient.getDateStats(shiftIsoDate(date, -7)).catch(() => null))
+  );
+  let priorFocus = 0;
+  let priorTotal = 0;
+  for (const stats of priorStats) {
+    if (!stats) continue;
+    priorTotal += stats.totalSeconds;
+    priorFocus += focusSecondsOf(stats);
+  }
+  if (priorTotal <= 0) return null;
+
+  const currentShare = (focusSecondsOf(week) / week.totalSeconds) * 100;
+  const priorShare = (priorFocus / priorTotal) * 100;
+  return Math.round(currentShare - priorShare);
 }
 
 function dedupeActivitySegments(segments: ActivitySegment[]): ActivitySegment[] {
@@ -441,16 +510,6 @@ function buildAppIconMap(segments: ActivitySegment[]): AppIconMap {
   return appIcons;
 }
 
-function productivityItems(data: DashboardData['today'] | DashboardData['week']): ToneItem[] {
-  return data.productivityDurations.map((item) => ({
-    label: DRIFTY_PRODUCTIVITY_METADATA[item.productivity].label,
-    seconds: item.totalSeconds,
-    ratio: item.ratio,
-    color: productivityToneColor[item.productivity],
-    meta: pluralize(item.segments, 'segment')
-  }));
-}
-
 function segmentClassificationDetail(segment: ActivitySegment) {
   return classifyActivityDetailed(segment);
 }
@@ -496,18 +555,6 @@ function topActivityDetailLabel(activity: TopActivitySummary, segments: Activity
   return `${categoryLabel(segmentCategory(leadingSegment))} · ${productivityLabel(segmentProductivity(leadingSegment))} · ${source.label}`;
 }
 
-function SettingsFlag({ label, detail, enabled }: { label: string; detail: string; enabled: boolean }) {
-  return (
-    <div className="setting-row">
-      <div className="stack-tight">
-        <strong>{label}</strong>
-        <span className="muted">{detail}</span>
-      </div>
-      <span className="pill">{enabled ? 'On' : 'Off'}</span>
-    </div>
-  );
-}
-
 function FlowChartView({
   blocks,
   currentMinuteOfDay: currentMinute,
@@ -525,6 +572,7 @@ function FlowChartView({
 }) {
   const [hoveredBlock, setHoveredBlock] = useState<FlowHoverState | null>(null);
   const [hoveredLegend, setHoveredLegend] = useState<FlowLegendHoverState | null>(null);
+  const [colorMode, setColorMode] = useState<FlowColorMode>('category');
   const rowMinuteOffsets = useMemo(
     () => Array.from({ length: 60 / intervalMinutes }, (_, index) => index * intervalMinutes),
     [intervalMinutes]
@@ -540,6 +588,24 @@ function FlowChartView({
     for (const block of blocks) next.set(`${block.minuteOfDay}`, block);
     return next;
   }, [blocks]);
+  const [hoveredGroupMinutes, setHoveredGroupMinutes] = useState<Set<number> | null>(null);
+  // Collect the contiguous run of same-identity cells around the hovered block so the whole
+  // focus block lights up together (parity with Mac FlowHoverGroupHighlights).
+  function computeHoverGroupMinutes(block: FlowBlock): Set<number> {
+    const key = blockIdentityKey(block);
+    const minutes = new Set<number>([block.minuteOfDay]);
+    for (let minute = block.minuteOfDay - intervalMinutes; minute >= 0; minute -= intervalMinutes) {
+      const candidate = blockByCell.get(`${minute}`);
+      if (!candidate || blockIdentityKey(candidate) !== key) break;
+      minutes.add(minute);
+    }
+    for (let minute = block.minuteOfDay + intervalMinutes; minute < MINUTES_PER_DAY; minute += intervalMinutes) {
+      const candidate = blockByCell.get(`${minute}`);
+      if (!candidate || blockIdentityKey(candidate) !== key) break;
+      minutes.add(minute);
+    }
+    return minutes;
+  }
   const chartStyle: CSSProperties & Record<'--flow-cell-min-height' | '--flow-breakdown-cell-min-height', string> = {
     '--flow-cell-min-height': `${(FLOW_CELL_BASE_MIN_HEIGHT_REM * intervalMinutes) / BASE_FLOW_CELL_INTERVAL_MINUTES}rem`,
     '--flow-breakdown-cell-min-height': `${(FLOW_BREAKDOWN_CELL_BASE_MIN_HEIGHT_REM * intervalMinutes) / BASE_FLOW_CELL_INTERVAL_MINUTES}rem`
@@ -565,13 +631,26 @@ function FlowChartView({
   if (blocks.length === 0) return null;
 
   return (
-    <section className="flow-chart-card" aria-label={`${intervalMinutes}-minute flow chart`} data-flow-interval={intervalMinutes} style={chartStyle}>
+    <section className="flow-chart-card" aria-label={`${intervalMinutes}-minute flow chart`} data-flow-interval={intervalMinutes} data-flow-color-mode={colorMode} style={chartStyle}>
       <div className="flow-chart-head">
         <div>
           <span className="label-mono">flow chart</span>
           <p className="flow-chart-copy">{intervalMinutes}-minute cells show the dominant app or site in each block; tracked totals live in Time breakdown.</p>
         </div>
         <div className="flow-chart-head__actions">
+          <div className="seg flow-color-mode-control" aria-label="Flow chart color mode">
+            {FLOW_COLOR_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={option.id === colorMode ? 'on' : undefined}
+                aria-pressed={option.id === colorMode}
+                onClick={() => setColorMode(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           {onIntervalChange ? (
             <div className="seg flow-interval-control" aria-label="Flow chart interval">
               {FLOW_INTERVAL_OPTIONS.map((option) => (
@@ -588,36 +667,59 @@ function FlowChartView({
             </div>
           ) : null}
           <div className="flow-chart-legend" aria-label="Flow chart tones">
-            {FLOW_CATEGORY_GROUPS.map((group) => (
-              <span className="flow-chart-legend__group" key={group.productivity}>
-                <button
-                  type="button"
-                  className="flow-chart-legend__parent"
-                  onMouseEnter={(event) => showLegendHover(event, productivityLabel(group.productivity), group.categories)}
-                  onMouseLeave={() => setHoveredLegend(null)}
-                  onFocus={(event) => showLegendHover(event, productivityLabel(group.productivity), group.categories)}
-                  onBlur={() => setHoveredLegend(null)}
-                  title={`${productivityLabel(group.productivity)} categories`}
-                >
-                  {productivityLabel(group.productivity)}
-                </button>
-                <span className="flow-chart-legend__categories" aria-label={`${productivityLabel(group.productivity)} categories`}>
-                  {group.categories.map((category) => (
+            {colorMode === 'category' ? (
+              FLOW_CATEGORY_GROUPS.map((group) => (
+                <span className="flow-chart-legend__group" key={group.productivity}>
+                  <button
+                    type="button"
+                    className="flow-chart-legend__parent"
+                    onMouseEnter={(event) => showLegendHover(event, productivityLabel(group.productivity), group.categories)}
+                    onMouseLeave={() => setHoveredLegend(null)}
+                    onFocus={(event) => showLegendHover(event, productivityLabel(group.productivity), group.categories)}
+                    onBlur={() => setHoveredLegend(null)}
+                    title={`${productivityLabel(group.productivity)} categories`}
+                  >
+                    {productivityLabel(group.productivity)}
+                  </button>
+                  <span className="flow-chart-legend__categories" aria-label={`${productivityLabel(group.productivity)} categories`}>
+                    {group.categories.map((category) => (
+                      <button
+                        type="button"
+                        aria-label={categoryLabel(category)}
+                        className={`flow-chart-legend__dot flow-chart-legend__dot--${category}`}
+                        key={category}
+                        onMouseEnter={(event) => showLegendHover(event, categoryLabel(category), [category])}
+                        onMouseLeave={() => setHoveredLegend(null)}
+                        onFocus={(event) => showLegendHover(event, categoryLabel(category), [category])}
+                        onBlur={() => setHoveredLegend(null)}
+                        title={categoryLabel(category)}
+                      />
+                    ))}
+                  </span>
+                </span>
+              ))
+            ) : (
+              FLOW_PRODUCTIVITY_LEGEND_ORDER.map((productivity) => {
+                const group = FLOW_CATEGORY_GROUPS.find((candidate) => candidate.productivity === productivity);
+                const categories = group?.categories ?? [];
+                return (
+                  <span className="flow-chart-legend__group flow-chart-legend__group--productivity" key={productivity}>
                     <button
                       type="button"
-                      aria-label={categoryLabel(category)}
-                      className={`flow-chart-legend__dot flow-chart-legend__dot--${category}`}
-                      key={category}
-                      onMouseEnter={(event) => showLegendHover(event, categoryLabel(category), [category])}
+                      className="flow-chart-legend__parent flow-chart-legend__parent--tone"
+                      onMouseEnter={(event) => showLegendHover(event, productivityLabel(productivity), categories)}
                       onMouseLeave={() => setHoveredLegend(null)}
-                      onFocus={(event) => showLegendHover(event, categoryLabel(category), [category])}
+                      onFocus={(event) => showLegendHover(event, productivityLabel(productivity), categories)}
                       onBlur={() => setHoveredLegend(null)}
-                      title={categoryLabel(category)}
-                    />
-                  ))}
-                </span>
-              </span>
-            ))}
+                      title={`${productivityLabel(productivity)} blocks`}
+                    >
+                      <span className="flow-chart-legend__tone-dot" style={{ background: productivityToneColor[productivity] }} aria-hidden="true" />
+                      {productivityLabel(productivity)}
+                    </button>
+                  </span>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -667,19 +769,30 @@ function FlowChartView({
                   );
                 }
 
+                const inHoverGroup = hoveredGroupMinutes?.has(block.minuteOfDay) ?? false;
                 return (
                   <button
-                    className={`flow-cell flow-cell--${block.category}${isCurrentHourCell ? ' flow-cell--now-hour' : ''}`}
+                    className={`flow-cell flow-cell--${colorMode === 'productivity' ? block.productivity : block.category}${isCurrentHourCell ? ' flow-cell--now-hour' : ''}${inHoverGroup ? ' flow-cell--hover-group' : ''}`}
                     key={block.minuteOfDay}
                     type="button"
                     aria-label={cellTitle(block, intervalMinutes).replace(/\n/g, ', ')}
-                    onMouseEnter={(event: MouseEvent<HTMLButtonElement>) => setHoveredBlock({ block, x: event.clientX, y: event.clientY })}
-                    onMouseLeave={() => setHoveredBlock(null)}
+                    onMouseEnter={(event: MouseEvent<HTMLButtonElement>) => {
+                      setHoveredBlock({ block, x: event.clientX, y: event.clientY });
+                      setHoveredGroupMinutes(computeHoverGroupMinutes(block));
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredBlock(null);
+                      setHoveredGroupMinutes(null);
+                    }}
                     onFocus={(event: React.FocusEvent<HTMLButtonElement>) => {
                       const rect = event.currentTarget.getBoundingClientRect();
                       setHoveredBlock({ block, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+                      setHoveredGroupMinutes(computeHoverGroupMinutes(block));
                     }}
-                    onBlur={() => setHoveredBlock(null)}
+                    onBlur={() => {
+                      setHoveredBlock(null);
+                      setHoveredGroupMinutes(null);
+                    }}
                   >
                     <span className="flow-cell__mark" aria-hidden="true" />
                   </button>
@@ -1056,12 +1169,40 @@ function CompactClassificationHoverCard({ hover, appIcons }: { hover: CompactCla
   );
 }
 
+function AppUsageFeatured({ activity, totalSeconds, detail }: { activity: TopActivitySummary; totalSeconds: number; detail: string }) {
+  const share = totalSeconds > 0 ? activity.totalSeconds / totalSeconds : 0;
+  const barStyle = { '--app-usage-share': `${Math.max(share * 100, 2)}%` } as CSSProperties & Record<'--app-usage-share', string>;
+  const name = activity.siteDomain ?? activity.appName;
+  return (
+    <div className="app-usage-feature">
+      <div className="app-usage-feature__head">
+        <span className="app-usage-feature__rank">#1 Most used</span>
+        <span className="usage-identity-icon usage-identity-icon--lg">
+          {activity.siteDomain ? <SiteFavicon domain={activity.siteDomain} size={40} /> : <AppGlyph appName={activity.appName} size="lg" />}
+        </span>
+        <div className="app-usage-feature__title">
+          <strong className="truncate">{name}</strong>
+          <span className="muted truncate">{detail}</span>
+        </div>
+      </div>
+      <div className="app-usage-feature__metric">
+        <strong>{formatDuration(activity.totalSeconds)}</strong>
+        <span className="muted">{Math.round(share * 100)}% of tracked time</span>
+      </div>
+      <div className="app-usage-feature__bar" style={barStyle} aria-hidden="true"><span /></div>
+      <div className="app-usage-feature__stats">
+        <span><strong>{activity.sessionCount}</strong> {activity.sessionCount === 1 ? 'session' : 'sessions'}</span>
+        <span><strong>{formatDuration(activity.averageSessionSeconds)}</strong> avg</span>
+        <span><strong>{activity.activeDays ?? 1}</strong> active {(activity.activeDays ?? 1) === 1 ? 'day' : 'days'}</span>
+      </div>
+    </div>
+  );
+}
+
 function DayView({ data }: { data: DashboardData }) {
-  const topFocus = data.today.productivityDurations.find((item) => item.productivity === 'focus')?.totalSeconds ?? 0;
-  const topDrift = data.today.productivityDurations.find((item) => item.productivity === 'drift')?.totalSeconds ?? 0;
   const [flowIntervalMinutes, setFlowIntervalMinutes] = useState<FlowIntervalMinutes>(3);
   const day = dashboardDayIsoDate(data.today);
-  const startOfDayMinutes = dashboardStartOfDayMinutes();
+  const startOfDayMinutes = data.startOfDayMinutes;
   const isSelectedDayToday = day === logicalDayIsoDateForDate(new Date(), startOfDayMinutes);
   const flowBlocks = useMemo(
     () => buildFlowBlocks(data.today.segments, day, flowIntervalMinutes, undefined, startOfDayMinutes),
@@ -1096,61 +1237,184 @@ function DayView({ data }: { data: DashboardData }) {
         <EmptyState title="No timeline yet" detail={data.currentSession ? `Tracker is live for ${formatDateLabel(day)}.` : 'Tracking is paused. Use the sidebar control or move to a day with recorded activity.'} />
       )}
 
-      <div className="grid grid--dashboard">
-        <div className="stack">
-          <Panel title="Today so far" eyebrow="Your Day">
-            <div className="grid grid--two">
-              <Metric label="Local time" value={formatDuration(data.today.totalSeconds)} detail={pluralize(data.today.segments.length, 'segment')} />
-              <Metric label="Current" value={data.currentSession ? formatDuration(data.currentSession.durationSeconds) : 'Idle'} detail={data.currentSession?.siteDomain ?? data.currentSession?.siteTitle ?? 'No active browser session'} />
-              <Metric label="Focus" value={formatDuration(topFocus)} detail="Classified locally from browser sessions" />
-              <Metric label="Drift" value={formatDuration(topDrift)} detail="Shown only on this device" />
-            </div>
-          </Panel>
+      <FocusDriftSection
+        segments={data.today.segments}
+        day={day}
+        currentMinuteOfDay={isSelectedDayToday ? currentMinuteOfDay() : null}
+        startOfDayMinutes={startOfDayMinutes}
+        dayTotalSeconds={data.today.totalSeconds}
+        daySegmentCount={data.today.segments.length}
+        currentSessionLabel={data.currentSession?.siteDomain ?? data.currentSession?.siteTitle ?? data.currentSession?.appName ?? null}
+        currentSessionDurationSeconds={data.currentSession ? data.currentSession.durationSeconds : null}
+      />
 
-          <Panel title="Productivity mix">
-            <ToneBars items={productivityItems(data.today)} emptyTitle="Usage is still quiet" emptyDetail="Leave Drifty running while you browse and today's mix will fill in here." />
-          </Panel>
-        </div>
-
-        <div className="stack">
-          <Panel title="Browser usage panel" eyebrow="Local summary">
-            {data.today.topActivities.length > 0 ? (
-              <div className="list">
-                {data.today.topActivities.map((activity) => (
-                  <div className="list-row" key={`${activity.usageKind}-${activity.appName}`}>
-                    <div className="list-title">
-                      <strong className="truncate">{activity.siteDomain ?? activity.appName}</strong>
-                      <span className="muted truncate">{topActivityDetailLabel(activity, data.today.segments)} · {pluralize(activity.sessionCount, 'session')} · average {formatDuration(activity.averageSessionSeconds)}</span>
-                    </div>
-                    <span className="measure">{formatDuration(activity.totalSeconds)}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="No activity yet" detail="Local site summaries appear after the extension records browser sessions." />
-            )}
-          </Panel>
-        </div>
-      </div>
+      <Panel title="Browser usage panel" eyebrow="Most used">
+        {data.today.topActivities.length > 0 ? (
+          <div className="app-usage-layout">
+            <AppUsageFeatured activity={data.today.topActivities[0]} totalSeconds={data.today.totalSeconds} detail={topActivityDetailLabel(data.today.topActivities[0], data.today.segments)} />
+            {data.today.topActivities.length > 1 ? (
+              <ol className="app-usage-list" aria-label="Ranked browser usage">
+                {data.today.topActivities.slice(1).map((activity, index) => {
+                  const share = data.today.totalSeconds > 0 ? activity.totalSeconds / data.today.totalSeconds : 0;
+                  const barStyle = { '--app-usage-share': `${Math.max(share * 100, 2)}%` } as CSSProperties & Record<'--app-usage-share', string>;
+                  return (
+                    <li className="app-usage-row" key={`${activity.usageKind}-${activity.appName}`}>
+                      <span className="app-usage-rank" aria-label={`Rank ${index + 2}`}>#{index + 2}</span>
+                      <span className="usage-identity-icon usage-identity-icon--sm">
+                        {activity.siteDomain ? <SiteFavicon domain={activity.siteDomain} size={22} /> : <AppGlyph appName={activity.appName} size="sm" />}
+                      </span>
+                      <div className="app-usage-row__copy">
+                        <strong className="truncate">{activity.siteDomain ?? activity.appName}</strong>
+                        <span className="muted truncate">{pluralize(activity.sessionCount, 'session')} · avg {formatDuration(activity.averageSessionSeconds)}</span>
+                        <div className="app-usage-row__bar" style={barStyle} aria-hidden="true"><span /></div>
+                      </div>
+                      <div className="app-usage-row__measure">
+                        <strong>{formatDuration(activity.totalSeconds)}</strong>
+                        <span className="muted">{Math.round(share * 100)}%</span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : null}
+          </div>
+        ) : (
+          <EmptyState title="No activity yet" detail="Local site summaries appear after the extension records browser sessions." />
+        )}
+      </Panel>
     </div>
   );
 }
 
 function WeekView({ data }: { data: DashboardData }) {
-  return <WeekCalendarView data={data} startOfDayMinutes={dashboardStartOfDayMinutes()} />;
+  return <WeekCalendarView data={data} startOfDayMinutes={data.startOfDayMinutes} />;
 }
 
-function SettingsView({ data }: { data: DashboardData }) {
-  const sync = data.settings.sync;
-  const privacy = data.settings.privacy;
+const START_OF_DAY_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
+  value: String(hour * 60),
+  label: `${(hour % 12 || 12)}:00 ${hour < 12 ? 'AM' : 'PM'}`
+}));
+
+const START_OF_WEEK_OPTIONS = [
+  { value: 'sunday' as const, label: 'Sunday' },
+  { value: 'monday' as const, label: 'Monday' }
+];
+
+function normalizeToHex(value: string): string {
+  const trimmed = value.trim();
+  if (/^#([0-9a-f]{3})$/i.test(trimmed)) return `#${trimmed.slice(1).split('').map((char) => char + char).join('')}`;
+  if (/^#([0-9a-f]{6})$/i.test(trimmed)) return trimmed;
+  const rgbMatch = trimmed.match(/rgba?\(([^)]+)\)/i);
+  if (rgbMatch) {
+    const [r, g, b] = rgbMatch[1].split(',').map((part) => Math.max(0, Math.min(255, Math.round(parseFloat(part)))));
+    return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+  }
+  return '';
+}
+
+function effectiveCategoryColor(categoryId: string, override?: string): string {
+  if (override) return override;
+  if (typeof document === 'undefined') return '#888888';
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(categoryColorVar(categoryId)).trim();
+  return normalizeToHex(raw) || '#888888';
+}
+
+function SettingRow({ label, detail, children }: { label: string; detail?: string; children: ReactNode }) {
+  return (
+    <div className="setting-row">
+      <div className="stack-tight">
+        <strong>{label}</strong>
+        {detail ? <span className="muted">{detail}</span> : null}
+      </div>
+      <div className="setting-row__control">{children}</div>
+    </div>
+  );
+}
+
+function buildSessionsCsv(segments: ActivitySegment[]): string {
+  const header = ['started_at', 'ended_at', 'duration_seconds', 'category', 'productivity', 'site_or_app', 'title'];
+  const rows = segments.map((segment) => {
+    const detail = classifyActivityDetailed(segment);
+    const source = segment.siteDomain ?? segment.siteTitle ?? segment.appName;
+    const title = (segment.windowTitle ?? segment.siteTitle ?? '').replace(/"/g, '""');
+    return [
+      segment.startedAt,
+      segment.endedAt,
+      String(segment.durationSeconds),
+      detail.category,
+      detail.productivity,
+      `"${source.replace(/"/g, '""')}"`,
+      `"${title}"`
+    ].join(',');
+  });
+  return [header.join(','), ...rows].join('\n');
+}
+
+function downloadCsv(filename: string, csv: string): void {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function SettingsView({ data, onReload }: { data: DashboardData; onReload: () => void }) {
+  const { theme, setTheme } = useTheme();
+  const { overrides: colorOverrides, setColor, resetColor } = useCategoryColors();
+  const [settings, setSettings] = useState<DriftyBrowserSettings>(() => ({
+    trackingEnabled: data.settings.trackingEnabled,
+    preferences: data.settings.preferences,
+    sync: data.settings.sync,
+    privacy: data.settings.privacy
+  }));
+  const [savingNote, setSavingNote] = useState<string | null>(null);
+
+  async function persist(next: DriftyBrowserSettings, options?: { reload?: boolean; note?: string }) {
+    setSettings(next);
+    try {
+      await browserTrackerClient.saveSettings(next);
+      setSavingNote(options?.note ?? 'Saved');
+      if (options?.reload) onReload();
+    } catch {
+      setSavingNote('Could not save — open from the installed extension.');
+    }
+    window.setTimeout(() => setSavingNote(null), 2400);
+  }
+
+  const updatePreferences = (partial: Partial<DriftyBrowserSettings['preferences']>, reload = false) =>
+    persist({ ...settings, preferences: { ...settings.preferences, ...partial } }, { reload, note: 'Preferences saved' });
+  const updateSync = (partial: Partial<DriftyBrowserSettings['sync']>) =>
+    persist({ ...settings, sync: { ...settings.sync, ...partial } });
+  const updatePrivacy = (partial: Partial<DriftyBrowserSettings['privacy']>) =>
+    persist({ ...settings, privacy: { ...settings.privacy, ...partial } });
+
+  const weekSessionCount = data.week.segments.length;
 
   return (
     <div className="settings-tab-surface stack">
+      {savingNote ? <div className="settings-save-note" role="status">{savingNote}</div> : null}
       <div className="grid grid--dashboard">
         <div className="stack">
           <Panel title="General" eyebrow="Settings">
-            <SettingsFlag label="Cloud sync" detail="Off by default. This dashboard reads local extension summaries only." enabled={sync.cloudSyncEnabled} />
-            <SettingsFlag label="Remote category sync" detail="Remote category updates remain a local setting and are not changed here." enabled={sync.remoteCategorySyncEnabled} />
+            <SettingRow label="Start of day" detail="Treat days as starting at this hour. Default is 4:00 AM.">
+              <SettingsSelect ariaLabel="Start of day" value={String(settings.preferences.startOfDayMinutes)} options={START_OF_DAY_OPTIONS} onChange={(value) => updatePreferences({ startOfDayMinutes: Number(value) }, true)} />
+            </SettingRow>
+            <SettingRow label="Start of week" detail="Choose the first day shown for weekly views.">
+              <SettingsSelect ariaLabel="Start of week" value={settings.preferences.startOfWeek} options={START_OF_WEEK_OPTIONS} onChange={(value) => updatePreferences({ startOfWeek: value })} />
+            </SettingRow>
+            <SettingRow label="Theme" detail="Matches the dashboard theme switch.">
+              <div className="settings-mode-switch" role="radiogroup" aria-label="Theme">
+                {(['light', 'dark'] as const).map((mode) => (
+                  <button key={mode} type="button" className={`settings-mode-option${theme === mode ? ' is-active' : ''}`} role="radio" aria-checked={theme === mode} onClick={() => setTheme(mode)}>
+                    <span>{mode === 'light' ? 'Light' : 'Dark'}</span>
+                  </button>
+                ))}
+              </div>
+            </SettingRow>
           </Panel>
 
           <Panel title="Classification rules">
@@ -1159,9 +1423,31 @@ function SettingsView({ data }: { data: DashboardData }) {
                 <div className="list-row" key={`settings-${category.id}`}>
                   <div className="list-title">
                     <strong>{category.label}</strong>
-                    <span className="muted truncate">{category.legacyKeys.length > 0 ? pluralize(category.legacyKeys.length, 'legacy key') : 'No legacy keys reported'}</span>
+                    <span className="muted truncate">{category.legacyKeys.length > 0 ? pluralize(category.legacyKeys.length, 'rule key') : 'Built-in rules'}</span>
                   </div>
                   <span className="pill"><span className="dot" style={{ background: categoryToneColor[category.id] }} />Local</span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel title="Colors">
+            <p className="muted" style={{ marginBottom: 'var(--space-2)' }}>Customize category colors used across charts. Stored locally on this device.</p>
+            <div className="settings-color-grid">
+              {data.categories.map((category) => (
+                <div className="settings-color-row" key={`color-${category.id}`}>
+                  <span className="settings-color-row__swatch" style={{ background: `var(${categoryColorVar(category.id)})` }} aria-hidden="true" />
+                  <strong className="settings-color-row__label">{category.label}</strong>
+                  <input
+                    type="color"
+                    className="settings-color-input"
+                    aria-label={`${category.label} color`}
+                    value={effectiveCategoryColor(category.id, colorOverrides[category.id])}
+                    onChange={(event) => setColor(category.id, event.target.value)}
+                  />
+                  {colorOverrides[category.id] ? (
+                    <button type="button" className="settings-color-reset" onClick={() => resetColor(category.id)}>Reset</button>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -1172,15 +1458,59 @@ function SettingsView({ data }: { data: DashboardData }) {
           <Panel title="Data & export">
             <div className="notice">
               <strong>Raw tracking history is not published</strong>
-              <p className="muted">This tab shows settings from the installed extension and does not start uploads, downloads, or sync jobs.</p>
+              <p className="muted">Exports and changes here stay on this device. Drifty does not start uploads or sync jobs unless you turn them on.</p>
             </div>
-            <SettingsFlag label="Raw history sync" detail="Raw sites, titles, and browsing history stay local unless a future explicit opt-in exists." enabled={sync.rawHistorySyncEnabled} />
-            <SettingsFlag label="Raw session sync" detail="Raw session details are not mirrored to shared services." enabled={sync.rawSessionSyncEnabled} />
+            <SettingRow label="Sessions logged" detail="Local browser sessions recorded this week.">
+              <span className="measure">{pluralize(weekSessionCount, 'session')}</span>
+            </SettingRow>
+            <SettingRow label="Export session data" detail="Download this week's sessions as CSV. Stays on this device.">
+              <button type="button" className="button button--secondary" disabled={weekSessionCount === 0} onClick={() => downloadCsv(`drifty-sessions-${data.day}.csv`, buildSessionsCsv(data.week.segments))}>Download CSV</button>
+            </SettingRow>
+          </Panel>
+
+          <Panel title="Sync">
+            <SettingRow label="Cloud sync" detail="Off by default. The dashboard reads local extension summaries only.">
+              <Toggle ariaLabel="Cloud sync" checked={settings.sync.cloudSyncEnabled} onChange={(checked) => updateSync({ cloudSyncEnabled: checked })} />
+            </SettingRow>
+            <SettingRow label="Remote category sync" detail="Pull category definition updates from the remote catalog.">
+              <Toggle ariaLabel="Remote category sync" checked={settings.sync.remoteCategorySyncEnabled} onChange={(checked) => updateSync({ remoteCategorySyncEnabled: checked })} />
+            </SettingRow>
+            <SettingRow label="Raw history sync" detail="Raw sites, titles, and browsing history stay local unless enabled.">
+              <Toggle ariaLabel="Raw history sync" checked={settings.sync.rawHistorySyncEnabled} onChange={(checked) => updateSync({ rawHistorySyncEnabled: checked })} />
+            </SettingRow>
+            <SettingRow label="Raw session sync" detail="Mirror raw session details to shared services.">
+              <Toggle ariaLabel="Raw session sync" checked={settings.sync.rawSessionSyncEnabled} onChange={(checked) => updateSync({ rawSessionSyncEnabled: checked })} />
+            </SettingRow>
           </Panel>
 
           <Panel title="Privacy posture">
-            <SettingsFlag label="Keep raw browsing local" detail="Raw site context is preserved only in local browser storage." enabled={privacy.preserveRawBrowsingLocalOnly} />
-            <SettingsFlag label="Keep raw sessions local" detail="Session details are not mirrored to shared services." enabled={privacy.preserveRawSessionsLocalOnly} />
+            <SettingRow label="Keep raw browsing local" detail="Raw site context is preserved only in local browser storage.">
+              <Toggle ariaLabel="Keep raw browsing local" checked={settings.privacy.preserveRawBrowsingLocalOnly} onChange={(checked) => updatePrivacy({ preserveRawBrowsingLocalOnly: checked })} />
+            </SettingRow>
+            <SettingRow label="Keep raw sessions local" detail="Session details are not mirrored to shared services.">
+              <Toggle ariaLabel="Keep raw sessions local" checked={settings.privacy.preserveRawSessionsLocalOnly} onChange={(checked) => updatePrivacy({ preserveRawSessionsLocalOnly: checked })} />
+            </SettingRow>
+          </Panel>
+
+          <Panel title="Debugging">
+            <SettingRow label="Start of day (effective)" detail="The boundary currently applied to day/week views.">
+              <span className="measure">{formatMinuteOfDay(settings.preferences.startOfDayMinutes)}</span>
+            </SettingRow>
+            <SettingRow label="Sessions today" detail="Local segments recorded for the selected day.">
+              <span className="measure">{data.today.segments.length}</span>
+            </SettingRow>
+            <SettingRow label="Local diagnostics" detail="Download a safe JSON snapshot of status and settings — no raw URLs.">
+              <button type="button" className="button button--secondary" onClick={() => downloadCsv(`drifty-debug-${data.day}.json`, JSON.stringify({
+                day: data.day,
+                startOfDayMinutes: settings.preferences.startOfDayMinutes,
+                theme,
+                todaySessionCount: data.today.segments.length,
+                weekSessionCount,
+                todayTotalSeconds: data.today.totalSeconds,
+                categoryColorOverrides: colorOverrides,
+                settings
+              }, null, 2))}>Download report</button>
+            </SettingRow>
           </Panel>
         </div>
       </div>
@@ -1192,7 +1522,20 @@ function DashboardApp() {
   const [activeTab, setActiveTab] = useState<TabKey>('day');
   const [selectedDay, setSelectedDay] = useState(() => logicalDayIsoDateForDate(new Date(), dashboardStartOfDayMinutes()));
   const [state, setState] = useState<LoadState>({ status: 'loading', data: null, error: null });
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [trackingEnabled, setTrackingEnabled] = useState(true);
+  const { theme, toggleTheme } = useTheme();
   const logicalToday = logicalDayIsoDateForDate(new Date(), dashboardStartOfDayMinutes());
+
+  useEffect(() => {
+    if (state.data) setTrackingEnabled(state.data.settings.trackingEnabled);
+  }, [state.data]);
+
+  function toggleTracking() {
+    const next = !trackingEnabled;
+    setTrackingEnabled(next);
+    void browserTrackerClient.saveSettings({ trackingEnabled: next });
+  }
 
   useEffect(() => {
     let active = true;
@@ -1209,15 +1552,16 @@ function DashboardApp() {
     return () => {
       active = false;
     };
-  }, [selectedDay]);
+  }, [selectedDay, reloadNonce]);
 
   const content = useMemo(() => {
     if (!state.data) return null;
     if (activeTab === 'day') return <DayView data={state.data} />;
     if (activeTab === 'week') return <WeekView data={state.data} />;
+    if (activeTab === 'trends') return <TrendsView startOfDayMinutes={state.data.startOfDayMinutes} />;
     if (activeTab === 'classification') return <ClassificationView data={state.data} />;
     if (activeTab === 'history') return <HistoryView />;
-    return <SettingsView data={state.data} />;
+    return <SettingsView data={state.data} onReload={() => setReloadNonce((nonce) => nonce + 1)} />;
   }, [activeTab, state.data]);
 
   return (
@@ -1228,6 +1572,13 @@ function DashboardApp() {
           onTabChange={(id) => setActiveTab(id as TabKey)}
           navItems={navSections}
           logoSrc={typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('icons/drifty-icon.png') : undefined}
+          tracker={{
+            enabled: trackingEnabled,
+            onToggle: toggleTracking,
+            currentLabel: state.data?.currentSession?.siteDomain ?? state.data?.currentSession?.siteTitle ?? state.data?.currentSession?.appName ?? null,
+            currentDuration: state.data?.currentSession ? formatDuration(state.data.currentSession.durationSeconds) : null,
+            todayTotal: state.data ? formatDuration(state.data.today.totalSeconds) : null
+          }}
         />
         <div className="shell shell--dashboard">
           <nav className="mobile-tabs" aria-label="Dashboard sections">
@@ -1245,12 +1596,13 @@ function DashboardApp() {
           </nav>
           <header className="page-header page-header--dashboard">
             <div className="brand-lockup">
-              <span className="eyebrow">Drifty dashboard</span>
-              <h1>Your browser time, kept local.</h1>
-              <p className="muted">Your Day, Week, Classification, History, and Settings for this extension install.</p>
+              <h1>{dashboardHeading(activeTab)}</h1>
+              <p className="muted dashboard-privacy-line">Local device ledger · raw history stays in this browser · kept local</p>
             </div>
             <div className="dashboard-header-actions">
-              <PrivacyPills runtimeReady={state.status === 'ready'} />
+              <div className="dashboard-header-actions__row">
+                <ThemeToggle theme={theme} onToggle={toggleTheme} />
+              </div>
               <DateNavigator selectedDay={selectedDay} today={logicalToday} onDayChange={setSelectedDay} />
             </div>
           </header>

@@ -112,6 +112,10 @@ const CATEGORY_METADATA = {
 const DEFAULT_SETTINGS = {
   trackingEnabled: true,
   privacyMode: false,
+  preferences: {
+    startOfDayMinutes: 240,
+    startOfWeek: 'sunday'
+  },
   sync: {
     cloudSyncEnabled: false,
     remoteCategorySyncEnabled: false,
@@ -402,6 +406,11 @@ async function finishActiveSession(reason = 'ended') {
 }
 
 async function recordPageMetadata(input) {
+  const settings = await getSettings();
+  if (!settings.trackingEnabled) {
+    return { recorded: false, paused: true };
+  }
+
   const metadata = sanitizeMetadata(input);
   if (!metadata) {
     return { recorded: false };
@@ -594,12 +603,27 @@ async function getSettings() {
   const settings = {
     ...DEFAULT_SETTINGS,
     ...storedSettings,
+    preferences: { ...DEFAULT_SETTINGS.preferences, ...(storedSettings.preferences ?? {}) },
     sync: { ...DEFAULT_SETTINGS.sync, ...(storedSettings.sync ?? {}) },
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(storedSettings.privacy ?? {}) },
     blocking: { ...DEFAULT_SETTINGS.blocking, ...(storedSettings.blocking ?? {}) }
   };
 
   return settings;
+}
+
+async function saveSettings(partial) {
+  const current = await getSettings();
+  const next = {
+    ...current,
+    ...partial,
+    preferences: { ...current.preferences, ...(partial?.preferences ?? {}) },
+    sync: { ...current.sync, ...(partial?.sync ?? {}) },
+    privacy: { ...current.privacy, ...(partial?.privacy ?? {}) },
+    blocking: { ...current.blocking, ...(partial?.blocking ?? {}) }
+  };
+  await setStorage({ [SETTINGS_KEY]: next });
+  return next;
 }
 
 async function getBlockingStatus(url) {
@@ -663,6 +687,8 @@ async function handleMessage(message, sender) {
     }
     case 'GET_SETTINGS':
       return getSettings();
+    case 'SAVE_SETTINGS':
+      return saveSettings(message.settings ?? {});
     case 'GET_CATEGORIES':
       return CATEGORY_METADATA;
     case 'CHECK_SITE_BLOCKED':

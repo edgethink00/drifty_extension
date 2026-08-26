@@ -153,6 +153,10 @@ export const browserTrackerClient = {
     return mergeBrowserSettings(await requestDriftyRuntimeData({ type: 'GET_SETTINGS' }));
   },
 
+  async saveSettings(partial: Partial<DriftyBrowserSettings>): Promise<DriftyBrowserSettings & { legacy: unknown }> {
+    return mergeBrowserSettings(await requestDriftyRuntimeData({ type: 'SAVE_SETTINGS', settings: partial }));
+  },
+
   async getCategories(): Promise<DriftyBrowserCategory[]> {
     return convertLegacyCategories(await requestDriftyRuntimeData({ type: 'GET_CATEGORIES' }));
   },

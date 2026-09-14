@@ -6,7 +6,6 @@ coverage/
 .omo/
 .claude/
 .codegraph
-AGENTS.md
 EOF
 issue-draft-*.md
 todo.md

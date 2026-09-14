@@ -1,4 +1,6 @@
-# 🕐 deTime
+# Drifty Chrome extension
+
+현재 구현의 빌드·설치는 아래 **현재 소스와 빌드**를 따릅니다. 과거 deTime 설명은 역사 자료로 보존합니다.
 
 **iOS Screen Time for Web** - Session-based web activity tracking and categorization Chrome Extension
 
@@ -26,71 +28,35 @@
 7. **📚 Education** - Coursera, Stack Overflow, Wikipedia 등
 8. **➕ Other** - 미분류 사이트
 
-## 🏗️ 시스템 구조
+## 현재 소스와 빌드
 
-```
-/detime-extension
-├── manifest.json              # Chrome Extension 설정
-├── background/                # Background Service Worker
-│   ├── service-worker.js     # 메인 서비스 워커
-│   ├── session-tracker.js    # 세션 추적 로직
-│   ├── category-detector.js  # 카테고리 자동 분류
-│   ├── db-manager.js         # IndexedDB 관리
-│   └── server-sync.js        # 서버 동기화
-├── popup/                     # 팝업 UI
-│   ├── popup.html
-│   ├── popup.css
-│   └── popup.js
-├── dashboard/                 # 대시보드 UI
-│   ├── dashboard.html
-│   ├── dashboard.css
-│   └── dashboard.js
-├── settings/                  # 설정 페이지
-│   ├── settings.html
-│   ├── settings.css
-│   └── settings.js
-├── common/                    # 공통 유틸리티
-│   ├── constants.js
-│   └── utils.js
-└── icons/                     # 아이콘
-    ├── icon.svg
-    └── README.md
+현재 Manifest V3 빌드는 Vite, React, TypeScript를 사용합니다. [AGENTS.md](AGENTS.md)의 소스 지도를 참고하세요.
+
+```text
+src/manifest.ts             # dist/manifest.json 생성 원본
+src/background/             # 서비스 워커
+src/content/                # 콘텐츠 스크립트
+src/popup/                  # React 팝업
+src/dashboard/              # React 대시보드·설정 진입점
+src/onboarding/             # React 온보딩
+src/lib/                    # 도메인·메시지·클라이언트 계약
+src/shared/                 # 공통 UI
+vite.config.ts              # 빌드 입력과 정적 복사
 ```
 
-## 🚀 설치 방법
+저장소 루트에서 실행합니다:
 
-### Chrome Web Store에서 설치 (예정)
+```bash
+npm ci
+npm run typecheck
+npm run build
+```
 
-1. Chrome Web Store에서 "deTime" 검색
-2. "Add to Chrome" 클릭
+`chrome://extensions`에서 개발자 모드를 켜고 생성된 `dist/`를 압축 해제된 확장 프로그램으로 로드합니다. 변경 후 다시 빌드하고 확장 프로그램을 새로고침합니다. UI 검증은 `npm run test:ui`를 참고하세요.
 
-### 개발자 모드로 설치
+## 과거 deTime 사용·설계 기록
 
-1. 이 저장소를 클론합니다:
-   ```bash
-   git clone https://github.com/yourusername/web-activity-tracker.git
-   cd web-activity-tracker
-   ```
-
-2. 아이콘 생성 (필요시):
-   ```bash
-   # SVG를 PNG로 변환 (Inkscape 또는 ImageMagick 사용)
-   cd icons
-   # 자세한 내용은 icons/README.md 참조
-   ```
-
-3. Chrome 브라우저에서 확장 프로그램 페이지 열기:
-   - Chrome 주소창에 `chrome://extensions` 입력
-   - 또는 메뉴 → 도구 더보기 → 확장 프로그램
-
-4. 개발자 모드 활성화:
-   - 오른쪽 상단의 "개발자 모드" 토글 켜기
-
-5. 압축해제된 확장 프로그램 로드:
-   - "압축해제된 확장 프로그램을 로드합니다" 클릭
-   - 클론한 저장소 폴더 선택
-
-6. 확장 프로그램이 설치되고 자동으로 활성화됩니다.
+아래 사용법, 저장 구조, 로드맵과 이 문서 앞부분의 기능 소개는 이전 deTime 구현 기록입니다. 현재 빌드의 기능·전송 경계·배포 상태를 보장하지 않습니다. 현재 동작을 수정할 때는 `src/`의 실제 소비자와 위 빌드 경로를 기준으로 확인하세요.
 
 ## 📖 사용 방법
 
